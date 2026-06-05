@@ -1,7 +1,7 @@
 name: version-develop
 
-# On merge to develop: bump the pre-release counter (pre_n) and tag.
-# e.g. 0.2.0 -> 0.2.0-dev.1 -> 0.2.0-dev.2 ...
+# On push to develop: bump the patch number and tag (numeric SemVer, no pre-release).
+# e.g. 0.1.0 -> 0.1.1 -> 0.1.2 ...
 # Uses VERSION_BUMP_TOKEN so the bump commit does not retrigger CI in a loop.
 
 on:
@@ -42,8 +42,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump pre-release (pre_n)
-        run: bump-my-version bump pre_n --verbose
+      - name: Bump patch
+        run: bump-my-version bump patch --verbose
 
       - name: Push commit and tags
         run: git push origin develop --follow-tags
