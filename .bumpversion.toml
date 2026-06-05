@@ -1,0 +1,15 @@
+[tool.bumpversion]
+current_version = "0.1.0"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+message = "bump: {current_version} → {new_version}"
+tag_message = "bump: {current_version} → {new_version}"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)(-dev\\.(?P<pre_n>\\d+))?"
+serialize = [
+  "{major}.{minor}.{patch}-dev.{pre_n}",
+  "{major}.{minor}.{patch}"
+]
+
+[[tool.bumpversion.files]]
+filename = "VERSION"

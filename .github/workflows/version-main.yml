@@ -1,0 +1,80 @@
+name: version-main
+
+# On merge to main: read the merged PR's semver label, bump the corresponding
+# part, tag, and publish a GitHub Release.
+#   semver:major -> major | semver:minor -> minor (default) | semver:patch -> patch
+# Uses VERSION_BUMP_TOKEN so the bump commit does not retrigger CI in a loop.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: version-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Skip the commit that the bump itself produced.
+    if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.VERSION_BUMP_TOKEN }}
+          fetch-depth: 0
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bump-my-version
+        run: pip install bump-my-version
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Resolve bump part from PR label
+        id: bump_part
+        env:
+          GH_TOKEN: ${{ secrets.VERSION_BUMP_TOKEN }}
+        run: |
+          # Find the PR merged by this push commit and read its semver:* label.
+          labels=$(gh pr list --state merged --search "${{ github.sha }}" \
+            --json labels --jq '.[0].labels[].name' || true)
+          part="minor"  # default
+          if echo "$labels" | grep -q "semver:major"; then
+            part="major"
+          elif echo "$labels" | grep -q "semver:patch"; then
+            part="patch"
+          fi
+          echo "part=$part" >> "$GITHUB_OUTPUT"
+          echo "Resolved bump part: $part"
+
+      - name: Bump version
+        run: bump-my-version bump ${{ steps.bump_part.outputs.part }} --verbose
+
+      - name: Push commit and tags
+        run: git push origin main --follow-tags
+
+      - name: Read new version
+        id: version
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.VERSION_BUMP_TOKEN }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --generate-notes

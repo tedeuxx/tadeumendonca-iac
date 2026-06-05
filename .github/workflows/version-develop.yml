@@ -1,0 +1,49 @@
+name: version-develop
+
+# On merge to develop: bump the pre-release counter (pre_n) and tag.
+# e.g. 0.2.0 -> 0.2.0-dev.1 -> 0.2.0-dev.2 ...
+# Uses VERSION_BUMP_TOKEN so the bump commit does not retrigger CI in a loop.
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-develop
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # Skip the commit that the bump itself produced.
+    if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.VERSION_BUMP_TOKEN }}
+          fetch-depth: 0
+          ref: develop
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bump-my-version
+        run: pip install bump-my-version
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump pre-release (pre_n)
+        run: bump-my-version bump pre_n --verbose
+
+      - name: Push commit and tags
+        run: git push origin develop --follow-tags
