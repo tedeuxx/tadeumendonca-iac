@@ -40,8 +40,9 @@ module "vpc" {
 }
 
 # S3 Gateway endpoint — keeps S3 traffic on the AWS backbone (free), off NAT. In provider v5 the
-# main vpc module no longer accepts endpoints, so this is the standalone submodule. No DynamoDB
-# endpoint (data tier is DocumentDB). No interface endpoints — low cross-NAT volume doesn't justify them.
+# main vpc module no longer accepts endpoints, so this is the standalone submodule. S3 + DynamoDB
+# Gateway endpoints keep the data tier off the NAT path (free, AWS backbone). No interface endpoints
+# — low cross-NAT volume doesn't justify them.
 module "vpc_endpoints" {
   source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
   version = "~> 5.0"
@@ -51,6 +52,11 @@ module "vpc_endpoints" {
   endpoints = {
     s3 = {
       service         = "s3"
+      service_type    = "Gateway"
+      route_table_ids = module.vpc.private_route_table_ids
+    }
+    dynamodb = {
+      service         = "dynamodb"
       service_type    = "Gateway"
       route_table_ids = module.vpc.private_route_table_ids
     }
