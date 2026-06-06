@@ -18,6 +18,8 @@ permissions:
 
 env:
   TF_TOKEN_app_terraform_io: ${{ secrets.TFC_API_TOKEN }}
+  # Node 20 is deprecated on runners (forced off 2026-06-16). Run bundled JS actions on Node 24.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   apply-staging:

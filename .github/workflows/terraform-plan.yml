@@ -25,6 +25,8 @@ env:
   # Workspace + tfvars follow the PR target branch. cloud{} selects the workspace by TF_WORKSPACE.
   TF_WORKSPACE: tadeumendonca-iac-${{ github.base_ref == 'main' && 'production' || 'staging' }}
   VAR_FILE: ${{ github.base_ref == 'main' && 'env/prd.tfvars' || 'env/stg.tfvars' }}
+  # Node 20 is deprecated on runners (forced off 2026-06-16). Run bundled JS actions on Node 24.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   plan:
@@ -36,15 +38,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Static analysis. NOTE: OSS checkov can't gate by severity (HIGH needs the Prisma/Bridgecrew
-      # platform key). Advisory for now (soft_fail) — flip to soft_fail:false + a curated .checkov.yaml
-      # skip-list once the baseline is clean, to honour the "block on HIGH" intent.
+      # Static analysis — hard-fail gate. Suppressions are curated: global policy deviations in
+      # .checkov.yaml, resource-specific ones inline as #checkov:skip on the resource.
+      # (OSS checkov can't gate by severity — HIGH needs the Prisma/Bridgecrew key — so we fail on
+      # any unsuppressed finding, which is stricter than "block on HIGH".)
       - name: Checkov
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: terraform/
           framework: terraform
-          soft_fail: true
+          config_file: .checkov.yaml
+          soft_fail: false
           output_format: cli
 
       - name: Configure AWS credentials (OIDC)

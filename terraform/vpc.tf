@@ -61,6 +61,7 @@ module "vpc_endpoints" {
 # Egress is HTTPS-only: everything crossing the VPC boundary is TLS. DocumentDB (27017) and Redis
 # (6379) inbound is granted by their cluster SGs allowing this SG as source (set in data.tf/cache.tf).
 resource "aws_security_group" "lambda" {
+  #checkov:skip=CKV2_AWS_5:Attached to the BFF + og-edge Lambdas in api.tf (Pattern B) — not yet present
   name        = "${var.project}-lambda-${var.environment}"
   description = "Lambda ENIs (private subnets) - HTTPS egress only" # ASCII only: EC2 rejects non-ASCII in GroupDescription
   vpc_id      = module.vpc.vpc_id
