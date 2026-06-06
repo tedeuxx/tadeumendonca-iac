@@ -1,0 +1,88 @@
+name: terraform-deploy
+
+# Apply on merge (/workflow/github-actions): develop → staging (auto), main → production
+# (gated by the production GitHub Environment's required reviewer). TFC holds state (Local
+# execution — GitHub runs apply); AWS access via OIDC. Pipelines are independent per repo:
+# on apply, IaC writes SSM params; the api/fed pipelines read them at their own deploy.
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform-deploy.yml"
+
+permissions:
+  contents: read
+  id-token: write # OIDC → AWS
+
+env:
+  TF_TOKEN_app_terraform_io: ${{ secrets.TFC_API_TOKEN }}
+
+jobs:
+  apply-staging:
+    # Skip the version-bump commit (it touches VERSION, not terraform/, but guard anyway).
+    if: ${{ github.ref == 'refs/heads/develop' && !startsWith(github.event.head_commit.message, 'bump:') }}
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: terraform-apply-staging
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      TF_WORKSPACE: tadeumendonca-iac-staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Apply
+        run: terraform apply -input=false -auto-approve -var-file=env/stg.tfvars
+
+  apply-production:
+    if: ${{ github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'bump:') }}
+    runs-on: ubuntu-latest
+    environment: production # required reviewer gates the apply
+    concurrency:
+      group: terraform-apply-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      TF_WORKSPACE: tadeumendonca-iac-production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Apply
+        run: terraform apply -input=false -auto-approve -var-file=env/prd.tfvars
