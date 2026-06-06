@@ -11,3 +11,7 @@ skip-check:
   # /infrastructure/terraform. CKV_TF_2 ("use a tag with a version number") enforces our policy
   # and PASSES; CKV_TF_1 ("use a commit hash") is the conflicting alternative — skip it.
   - CKV_TF_1
+  # SSM parameters are String only (never SecureString) by policy — the config bus holds only
+  # non-sensitive names/ids/ARNs; runtime secrets live in Secrets Manager (/infrastructure/ssm).
+  # CKV2_AWS_34 ("SSM Parameter should be Encrypted") conflicts with that — skip it.
+  - CKV2_AWS_34
