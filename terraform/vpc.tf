@@ -62,7 +62,7 @@ module "vpc_endpoints" {
 # (6379) inbound is granted by their cluster SGs allowing this SG as source (set in data.tf/cache.tf).
 resource "aws_security_group" "lambda" {
   name        = "${var.project}-lambda-${var.environment}"
-  description = "Lambda ENIs (private subnets) — HTTPS egress only"
+  description = "Lambda ENIs (private subnets) - HTTPS egress only" # ASCII only: EC2 rejects non-ASCII in GroupDescription
   vpc_id      = module.vpc.vpc_id
 
   egress {
