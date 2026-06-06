@@ -1,0 +1,13 @@
+# Checkov config — consumed by terraform-plan.yml (hard-fail gate).
+# Global skips are deliberate, project-wide policy deviations (resource-specific suppressions go
+# inline as #checkov:skip=<ID>:<reason> on the resource, e.g. CKV2_AWS_5 on the lambda SG).
+directory:
+  - terraform/
+framework:
+  - terraform
+compact: true
+skip-check:
+  # We pin module sources by version tag (~>), not commit hash — the standard set by
+  # /infrastructure/terraform. CKV_TF_2 ("use a tag with a version number") enforces our policy
+  # and PASSES; CKV_TF_1 ("use a commit hash") is the conflicting alternative — skip it.
+  - CKV_TF_1
