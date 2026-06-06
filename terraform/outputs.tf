@@ -20,3 +20,18 @@ output "lambda_security_group_id" {
   description = "Lambda SG id — set as source on the DocumentDB/Redis cluster SGs."
   value       = aws_security_group.lambda.id
 }
+
+output "frontend_bucket_name" {
+  description = "Private fed SPA origin bucket (CloudFront OAC reads it)."
+  value       = module.frontend_bucket.s3_bucket_id
+}
+
+output "artifacts_bucket_name" {
+  description = "Lambda code artifacts bucket (Pattern B bootstrap + deploy zips)."
+  value       = module.artifacts_bucket.s3_bucket_id
+}
+
+output "og_images_bucket_name" {
+  description = "Generated OG images cache bucket."
+  value       = module.og_images_bucket.s3_bucket_id
+}
