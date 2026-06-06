@@ -1,0 +1,105 @@
+name: terraform-plan
+
+# PR gate (/workflow/github-actions): checkov → fmt → init → validate → plan → comment.
+# A PR into develop plans the staging workspace; a PR into main plans production.
+# TFC is the state backend (Local execution — GitHub runs the plan); AWS access via OIDC.
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform-plan.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write # OIDC → AWS (plan refreshes data sources / state)
+
+concurrency:
+  group: terraform-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_TOKEN_app_terraform_io: ${{ secrets.TFC_API_TOKEN }}
+  # Workspace + tfvars follow the PR target branch. cloud{} selects the workspace by TF_WORKSPACE.
+  TF_WORKSPACE: tadeumendonca-iac-${{ github.base_ref == 'main' && 'production' || 'staging' }}
+  VAR_FILE: ${{ github.base_ref == 'main' && 'env/prd.tfvars' || 'env/stg.tfvars' }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Static analysis. NOTE: OSS checkov can't gate by severity (HIGH needs the Prisma/Bridgecrew
+      # platform key). Advisory for now (soft_fail) — flip to soft_fail:false + a curated .checkov.yaml
+      # skip-list once the baseline is clean, to honour the "block on HIGH" intent.
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform/
+          framework: terraform
+          soft_fail: true
+          output_format: cli
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Validate
+        run: terraform validate -no-color
+
+      - name: Plan
+        id: plan
+        run: terraform plan -input=false -no-color -var-file="$VAR_FILE"
+
+      - name: Comment plan on PR
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
+          WORKSPACE: ${{ env.TF_WORKSPACE }}
+        with:
+          script: |
+            const max = 60000;
+            let plan = process.env.PLAN || "(no plan output)";
+            if (plan.length > max) plan = plan.slice(0, max) + "\n...(truncated — see the Actions log)";
+            const body = [
+              `### Terraform Plan — \`${process.env.WORKSPACE}\``,
+              `Status: \`${{ steps.plan.outcome }}\``,
+              "```hcl",
+              plan,
+              "```",
+            ].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+            });
+            const marker = "### Terraform Plan — `" + process.env.WORKSPACE + "`";
+            const existing = comments.find((c) => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+            }
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
