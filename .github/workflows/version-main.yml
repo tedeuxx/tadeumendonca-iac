@@ -71,10 +71,40 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
+      - name: Build categorized release notes (commits since the previous release)
+        env:
+          GH_TOKEN: ${{ secrets.VERSION_BUMP_TOKEN }}
+        run: |
+          NEW="v${{ steps.version.outputs.version }}"
+          # previous *release* — only main publishes Releases, so this skips the per-commit
+          # develop tags (v0.1.x). The new release isn't created yet, so exclude NEW defensively.
+          PREV=$(gh release list --exclude-drafts --json tagName \
+            --jq "[.[].tagName | select(. != \"$NEW\")] | .[0]" 2>/dev/null || true)
+          RANGE="${PREV:+$PREV..}$NEW"
+          log() { git log --no-merges --pretty='%s%x09%h' "$RANGE" | grep -v '^bump:'; }
+          section() {  # $1 = heading, $2 = alternation of conventional-commit types
+            body=$(log | grep -iE "^($2)(\(.+\))?!?:" \
+              | sed -E "s/^($2)(\([^)]*\))?!?:[[:space:]]*//I" \
+              | awk -F'\t' '{print "- " $1 " (" $2 ")"}')
+            [ -n "$body" ] && printf '### %s\n%s\n\n' "$1" "$body"
+          }
+          {
+            section "✨ Features" "feat|feature"
+            section "🐛 Fixes" "fix"
+            section "📝 Documentation" "docs"
+            section "♻️ Refactoring" "refactor"
+            section "⚙️ CI & chores" "ci|chore|build|test"
+            other=$(log | grep -ivE "^(feat|feature|fix|docs|refactor|ci|chore|build|test|style|perf)(\(.+\))?!?:" \
+              | awk -F'\t' '{print "- " $1 " (" $2 ")"}')
+            [ -n "$other" ] && printf '### Other\n%s\n\n' "$other"
+            [ -n "$PREV" ] && echo "**Full changelog**: https://github.com/${{ github.repository }}/compare/$PREV...$NEW"
+          } > RELEASE_NOTES.md
+          echo "Generated notes for $RANGE:"; cat RELEASE_NOTES.md
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.VERSION_BUMP_TOKEN }}
         run: |
           gh release create "v${{ steps.version.outputs.version }}" \
             --title "v${{ steps.version.outputs.version }}" \
-            --generate-notes
+            --notes-file RELEASE_NOTES.md
