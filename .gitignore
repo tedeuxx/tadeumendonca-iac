@@ -1,0 +1,22 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# .terraform.lock.hcl is committed on purpose (pins provider checksums)
+
+# Plan/apply artifacts
+*.tfplan
+plan.out
+
+# Sensitive — never commit
+*.pem
+*.key
