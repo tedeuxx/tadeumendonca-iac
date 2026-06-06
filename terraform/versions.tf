@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 
   # Terraform Cloud holds state + locks; execution mode is Local (GitHub Actions runs plan/apply).

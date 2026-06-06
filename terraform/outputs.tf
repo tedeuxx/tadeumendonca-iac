@@ -35,3 +35,8 @@ output "og_images_bucket_name" {
   description = "Generated OG images cache bucket."
   value       = module.og_images_bucket.s3_bucket_id
 }
+
+output "docdb_cluster_endpoint" {
+  description = "DocumentDB cluster endpoint (hostname; credentials live in Secrets Manager)."
+  value       = module.docdb.endpoint
+}
