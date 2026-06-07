@@ -37,6 +37,7 @@ module "cognito" {
   client_allowed_oauth_scopes                 = ["openid", "email", "profile"]
   client_callback_urls                        = local.callback_urls
   client_logout_urls                          = local.logout_urls
+  client_default_redirect_uri                 = local.callback_urls[0] # must be one of the callback URLs
   client_supported_identity_providers         = ["COGNITO"]
   client_explicit_auth_flows                  = ["ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_USER_SRP_AUTH"]
 
@@ -62,18 +63,30 @@ module "waf_regional" {
   scope          = "REGIONAL"
   default_action = "allow"
 
+  # cloudposse/waf 1.11.x requires a per-rule visibility_config (the AWS web ACL mandates one per
+  # rule); newer module lines default it, but the aws-5-compatible pin needs it explicit.
   managed_rule_group_statement_rules = [
     {
       name            = "common"
       priority        = 1
       override_action = "none"
       statement       = { name = "AWSManagedRulesCommonRuleSet", vendor_name = "AWS" }
+      visibility_config = {
+        cloudwatch_metrics_enabled = true
+        sampled_requests_enabled   = true
+        metric_name                = "${var.project}-regional-common-${var.environment}"
+      }
     },
     {
       name            = "known-bad"
       priority        = 2
       override_action = "none"
       statement       = { name = "AWSManagedRulesKnownBadInputsRuleSet", vendor_name = "AWS" }
+      visibility_config = {
+        cloudwatch_metrics_enabled = true
+        sampled_requests_enabled   = true
+        metric_name                = "${var.project}-regional-known-bad-${var.environment}"
+      }
     },
   ]
 
@@ -83,6 +96,11 @@ module "waf_regional" {
       priority  = 10
       action    = "block"
       statement = { limit = 2000, aggregate_key_type = "IP" }
+      visibility_config = {
+        cloudwatch_metrics_enabled = true
+        sampled_requests_enabled   = true
+        metric_name                = "${var.project}-regional-rate-limit-${var.environment}"
+      }
     },
   ]
 
