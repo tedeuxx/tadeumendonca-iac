@@ -46,3 +46,18 @@ output "dynamodb_table_names" {
     audits        = module.audits_table.dynamodb_table_id
   }
 }
+
+output "cognito_user_pool_id" {
+  description = "Cognito user pool id (also in SSM /{env}/auth/cognito-user-pool-id)."
+  value       = module.cognito.id
+}
+
+output "cognito_hosted_ui_url" {
+  description = "Cognito custom hosted-UI URL."
+  value       = "https://${local.auth_domain}"
+}
+
+output "waf_regional_arn" {
+  description = "REGIONAL WAF web ACL ARN (shared by Cognito + API GW)."
+  value       = module.waf_regional.arn
+}
