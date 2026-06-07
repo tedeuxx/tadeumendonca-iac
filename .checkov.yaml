@@ -15,3 +15,9 @@ skip-check:
   # non-sensitive names/ids/ARNs; runtime secrets live in Secrets Manager (/infrastructure/ssm).
   # CKV2_AWS_34 ("SSM Parameter should be Encrypted") conflicts with that — skip it.
   - CKV2_AWS_34
+  # CloudWatch log groups use the AWS-managed key by default; CKV_AWS_158 ("encrypted by KMS [CMK]")
+  # demands a customer-managed CMK — Phase 1-3 is no-CMK by policy (/infrastructure/kms).
+  - CKV_AWS_158
+  # Log retention is a deliberate cost choice: 30d staging / 90d production across our log groups
+  # (flow logs, WAF). CKV_AWS_338 demands >= 1 year — skip; audit history lives in DynamoDB, not logs.
+  - CKV_AWS_338
