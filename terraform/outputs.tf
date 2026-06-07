@@ -56,3 +56,18 @@ output "frontend_url" {
   description = "Public SPA URL (custom domain fronted by CloudFront)."
   value       = "https://${local.frontend_host}"
 }
+
+output "cognito_user_pool_id" {
+  description = "Cognito user pool id (also in SSM /{env}/auth/cognito-user-pool-id)."
+  value       = module.cognito.id
+}
+
+output "cognito_hosted_ui_url" {
+  description = "Cognito custom hosted-UI URL."
+  value       = "https://${local.auth_domain}"
+}
+
+output "waf_regional_arn" {
+  description = "REGIONAL WAF web ACL ARN (shared by Cognito + API GW)."
+  value       = module.waf_regional.arn
+}
