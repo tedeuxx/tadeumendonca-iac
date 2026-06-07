@@ -35,3 +35,14 @@ output "og_images_bucket_name" {
   description = "Generated OG images cache bucket."
   value       = module.og_images_bucket.s3_bucket_id
 }
+
+output "dynamodb_table_names" {
+  description = "Per-entity DynamoDB table names (also published to SSM /{env}/data/*-table-name)."
+  value = {
+    profile       = module.profile_table.dynamodb_table_id
+    posts         = module.posts_table.dynamodb_table_id
+    articles      = module.articles_table.dynamodb_table_id
+    subscriptions = module.subscriptions_table.dynamodb_table_id
+    audits        = module.audits_table.dynamodb_table_id
+  }
+}
