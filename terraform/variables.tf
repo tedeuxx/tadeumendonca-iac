@@ -52,3 +52,13 @@ variable "azs" {
     error_message = "each az must be a valid Availability Zone id (e.g. us-east-1a)."
   }
 }
+
+variable "apex_domain" {
+  type        = string
+  description = "Registrable apex domain. Hosted zone name + base for per-env hosts (auth/api/frontend)."
+  default     = "tadeumendonca.io"
+  validation {
+    condition     = can(regex("^([a-z0-9-]+\\.)+[a-z]{2,}$", var.apex_domain))
+    error_message = "apex_domain must be a valid domain name (e.g. example.com)."
+  }
+}

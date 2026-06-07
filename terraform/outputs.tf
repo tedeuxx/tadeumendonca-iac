@@ -46,3 +46,13 @@ output "dynamodb_table_names" {
     audits        = module.audits_table.dynamodb_table_id
   }
 }
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution id (also in SSM /{env}/frontend/cloudfront-distribution-id)."
+  value       = module.cloudfront.cloudfront_distribution_id
+}
+
+output "frontend_url" {
+  description = "Public SPA URL (custom domain fronted by CloudFront)."
+  value       = "https://${local.frontend_host}"
+}

@@ -37,8 +37,11 @@ module "frontend_bucket" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 
-  server_side_encryption_configuration  = local.s3_encryption
-  attach_deny_insecure_transport_policy = true
+  server_side_encryption_configuration = local.s3_encryption
+  # TLS-deny is folded into the combined OAC bucket policy in frontend.tf (a single policy per
+  # bucket; the OAC allow needs the CloudFront ARN, so the policy can't live in this module call —
+  # that would create a storage↔frontend cycle).
+  attach_deny_insecure_transport_policy = false
 
   versioning = { enabled = true } # rollback safety for the site
 }
@@ -87,8 +90,9 @@ module "og_images_bucket" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 
-  server_side_encryption_configuration  = local.s3_encryption
-  attach_deny_insecure_transport_policy = true
+  server_side_encryption_configuration = local.s3_encryption
+  # TLS-deny folded into the combined OAC bucket policy in frontend.tf (see frontend_bucket).
+  attach_deny_insecure_transport_policy = false
 
   versioning = { enabled = false } # regenerable cache — no versioning
 
