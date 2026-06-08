@@ -94,6 +94,7 @@ module "apigw" {
   domain_name                 = local.api_domain
   domain_name_certificate_arn = data.aws_acm_certificate.main.arn
   create_certificate          = false
+  create_domain_records       = false # we manage the Route53 alias below (module derives the wrong zone)
 
   cors_configuration = {
     allow_origins = ["https://${local.frontend_host}"]
