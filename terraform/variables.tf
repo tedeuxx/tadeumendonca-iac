@@ -62,3 +62,13 @@ variable "apex_domain" {
     error_message = "apex_domain must be a valid domain name (e.g. example.com)."
   }
 }
+
+variable "github_org" {
+  type        = string
+  description = "GitHub org owning the api/fed repos — OIDC trust subjects repo:<org>/<repo>:*."
+  default     = "tedeuxx"
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9](-?[a-zA-Z0-9]){0,38}$", var.github_org))
+    error_message = "github_org must be a valid GitHub org/user handle."
+  }
+}
