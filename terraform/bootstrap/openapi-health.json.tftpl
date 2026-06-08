@@ -1,0 +1,22 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "tadeumendonca-api (seed)",
+    "version": "bootstrap"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "responses": {
+          "200": { "description": "OK" }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "${health_integration_uri}",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    }
+  }
+}
