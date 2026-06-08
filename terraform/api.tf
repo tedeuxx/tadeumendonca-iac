@@ -1,6 +1,8 @@
 # API layer (6a) — owned by /infrastructure/api-gateway + /infrastructure/lambda.
-# API GW v2 (HTTP) fronts ONLY the BFF: a single AWS_PROXY integration, routes at root. IaC seeds
-# the shell (GET /health); the api repo owns the full contract via reimport-api (Pattern B for code).
+# API Gateway REST (v1, REGIONAL) fronts ONLY the BFF: one AWS_PROXY (Lambda proxy) integration,
+# routes at root. IaC seeds the shell (GET /health) into the OpenAPI body; the api repo owns the full
+# contract via `put-rest-api --mode overwrite` (Pattern B for code). REST chosen over HTTP API because
+# it is WAF-associable (per-IP managed rules) + supports usage plans / request validation.
 # og-edge Lambda@Edge + its CloudFront association are #6b (#22). Redis/SNS env+policy → Phase 2.
 
 # Pattern B bootstrap: a minimal placeholder zip so the Lambda provisions with config only; the api
@@ -82,38 +84,79 @@ module "bff" {
   depends_on = [aws_s3_object.bff_bootstrap]
 }
 
-# API GW v2 (HTTP) — fronts only the BFF; custom domain; seed body (GET /health). The api repo owns
-# the full contract (reimport-api) — create_routes_and_integrations=false so Terraform won't manage routes.
-module "apigw" {
-  source  = "terraform-aws-modules/apigateway-v2/aws"
-  version = "~> 5.0"
-
-  name          = "${var.project}-${var.environment}"
-  protocol_type = "HTTP"
-
-  domain_name                 = local.api_domain
-  domain_name_certificate_arn = data.aws_acm_certificate.main.arn
-  create_certificate          = false
-  create_domain_records       = false # we manage the Route53 alias below (module derives the wrong zone)
-
-  cors_configuration = {
-    allow_origins = ["https://${local.frontend_host}"]
-    allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    allow_headers = ["authorization", "content-type"]
-    max_age       = 300
+# REST API — body is the OpenAPI spec (seed: GET /health → BFF). The api repo owns the body after
+# first apply via put-rest-api, so ignore_changes=[body] keeps Terraform from fighting it.
+resource "aws_api_gateway_rest_api" "this" {
+  name = "${var.project}-${var.environment}"
+  endpoint_configuration {
+    types = ["REGIONAL"] # REGIONAL (not EDGE): WAF-associable + regional cert
   }
-
-  create_routes_and_integrations = false
   body = templatefile("${path.module}/bootstrap/openapi-health.json.tftpl", {
     health_integration_uri = module.bff.lambda_function_invoke_arn
   })
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = [body]
+  }
+}
 
-  # HTTP API v2 can't be fronted by WAFv2 (only REST APIs / ALB / CloudFront / Cognito can) — stage
-  # throttling is the native rate guard here; per-route Cognito JWT authorizer (api repo) gates auth.
-  stage_default_route_settings = {
+resource "aws_api_gateway_deployment" "this" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  triggers    = { redeploy = sha1(aws_api_gateway_rest_api.this.body) } # redeploy on seed-body change
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Access logs for the stage (/infrastructure/cloudwatch).
+resource "aws_cloudwatch_log_group" "apigw" {
+  name              = "/aws/apigateway/${var.project}-${var.environment}"
+  retention_in_days = var.environment == "production" ? 90 : 30
+}
+
+resource "aws_api_gateway_stage" "this" {
+  #checkov:skip=CKV_AWS_120:API GW caching is a paid cache cluster — caching is done at CloudFront + the BFF (Redis), not the gateway
+  #checkov:skip=CKV2_AWS_51:no mTLS client-cert auth — the API authenticates callers via the Cognito JWT authorizer
+  #checkov:skip=CKV2_AWS_77:the REGIONAL WAF includes AWSManagedRulesKnownBadInputsRuleSet (covers Log4j) — checkov can't see it through the cloudposse module
+  rest_api_id          = aws_api_gateway_rest_api.this.id
+  deployment_id        = aws_api_gateway_deployment.this.id
+  stage_name           = "live"
+  xray_tracing_enabled = true
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.apigw.arn
+    format          = jsonencode({ requestId = "$context.requestId", ip = "$context.identity.sourceIp", method = "$context.httpMethod", path = "$context.path", status = "$context.status", latency = "$context.responseLatency" })
+  }
+}
+
+# Stage throttling + per-method metrics — the native rate guard (/infrastructure/api-gateway).
+resource "aws_api_gateway_method_settings" "this" {
+  #checkov:skip=CKV_AWS_225:API GW response caching not used — caching is at CloudFront + the BFF (Redis)
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  stage_name  = aws_api_gateway_stage.this.stage_name
+  method_path = "*/*"
+  settings {
     throttling_rate_limit  = 1000
     throttling_burst_limit = 2000
+    metrics_enabled        = true
+    logging_level          = "ERROR" # execution logs (CKV2_AWS_4)
   }
+}
+
+# Custom domain (REGIONAL) — the generated execute-api endpoint is never the public URL.
+resource "aws_api_gateway_domain_name" "this" {
+  domain_name              = local.api_domain
+  regional_certificate_arn = data.aws_acm_certificate.main.arn # us-east-1 regional cert
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+  security_policy = "TLS_1_2"
+}
+
+resource "aws_api_gateway_base_path_mapping" "this" {
+  api_id      = aws_api_gateway_rest_api.this.id
+  stage_name  = aws_api_gateway_stage.this.stage_name
+  domain_name = aws_api_gateway_domain_name.this.domain_name
 }
 
 # Broad invoke permission so reimported routes need no new grant.
@@ -122,21 +165,23 @@ resource "aws_lambda_permission" "apigw_bff" {
   action        = "lambda:InvokeFunction"
   function_name = module.bff.lambda_function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${module.apigw.api_execution_arn}/*/*"
+  source_arn    = "${aws_api_gateway_rest_api.this.execution_arn}/*/*"
 }
 
-# NOTE: no WAF association here — WAFv2 does not support API Gateway v2 (HTTP APIs); the REGIONAL
-# WAF protects only the Cognito hosted UI (auth.tf). The HTTP API relies on stage throttling (above)
-# + the per-route Cognito JWT authorizer (added by the api repo on reimport).
+# REGIONAL WAF → the REST API stage (REST stages ARE WAF-associable). Raw glue — no native attr.
+resource "aws_wafv2_web_acl_association" "api_gw" {
+  resource_arn = aws_api_gateway_stage.this.arn
+  web_acl_arn  = module.waf_regional.arn
+}
 
-# Route53 A-alias for the custom API domain → API GW.
+# Route53 A-alias for the custom API domain → the REST API regional domain.
 resource "aws_route53_record" "api" {
   zone_id = data.aws_route53_zone.main.zone_id
   name    = local.api_domain
   type    = "A"
   alias {
-    name                   = module.apigw.domain_name_target_domain_name
-    zone_id                = module.apigw.domain_name_hosted_zone_id
+    name                   = aws_api_gateway_domain_name.this.regional_domain_name
+    zone_id                = aws_api_gateway_domain_name.this.regional_zone_id
     evaluate_target_health = false
   }
 }
@@ -151,7 +196,7 @@ resource "aws_ssm_parameter" "gateway_url" {
 resource "aws_ssm_parameter" "gateway_id" {
   name  = "/${var.environment}/api/gateway-id"
   type  = "String"
-  value = module.apigw.api_id
+  value = aws_api_gateway_rest_api.this.id
 }
 
 resource "aws_ssm_parameter" "bff_function_name" {
