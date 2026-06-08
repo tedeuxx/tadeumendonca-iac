@@ -107,6 +107,13 @@ module "apigw" {
   body = templatefile("${path.module}/bootstrap/openapi-health.json.tftpl", {
     health_integration_uri = module.bff.lambda_function_invoke_arn
   })
+
+  # HTTP API v2 can't be fronted by WAFv2 (only REST APIs / ALB / CloudFront / Cognito can) — stage
+  # throttling is the native rate guard here; per-route Cognito JWT authorizer (api repo) gates auth.
+  stage_default_route_settings = {
+    throttling_rate_limit  = 1000
+    throttling_burst_limit = 2000
+  }
 }
 
 # Broad invoke permission so reimported routes need no new grant.
@@ -118,11 +125,9 @@ resource "aws_lambda_permission" "apigw_bff" {
   source_arn    = "${module.apigw.api_execution_arn}/*/*"
 }
 
-# REGIONAL WAF → API GW stage (deferred from auth.tf #5). Raw glue — no native WAF arg on the stage.
-resource "aws_wafv2_web_acl_association" "api_gw" {
-  resource_arn = module.apigw.stage_arn
-  web_acl_arn  = module.waf_regional.arn
-}
+# NOTE: no WAF association here — WAFv2 does not support API Gateway v2 (HTTP APIs); the REGIONAL
+# WAF protects only the Cognito hosted UI (auth.tf). The HTTP API relies on stage throttling (above)
+# + the per-route Cognito JWT authorizer (added by the api repo on reimport).
 
 # Route53 A-alias for the custom API domain → API GW.
 resource "aws_route53_record" "api" {

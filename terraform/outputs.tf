@@ -68,7 +68,7 @@ output "cognito_hosted_ui_url" {
 }
 
 output "waf_regional_arn" {
-  description = "REGIONAL WAF web ACL ARN (shared by Cognito + API GW)."
+  description = "REGIONAL WAF web ACL ARN (protects the Cognito hosted UI; HTTP API v2 can't use WAF)."
   value       = module.waf_regional.arn
 }
 
