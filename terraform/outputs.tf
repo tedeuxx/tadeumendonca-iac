@@ -71,3 +71,11 @@ output "waf_regional_arn" {
   description = "REGIONAL WAF web ACL ARN (shared by Cognito + API GW)."
   value       = module.waf_regional.arn
 }
+
+output "github_actions_role_arns" {
+  description = "OIDC deploy role ARNs for the api/fed repos (also in SSM /{env}/iam/*)."
+  value = {
+    api = module.oidc_api.iam_role_arn
+    fed = module.oidc_fed.iam_role_arn
+  }
+}
