@@ -14,7 +14,7 @@
           "type": "aws_proxy",
           "httpMethod": "POST",
           "uri": "${health_integration_uri}",
-          "payloadFormatVersion": "2.0"
+          "passthroughBehavior": "when_no_match"
         }
       }
     }
