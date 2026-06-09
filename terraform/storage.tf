@@ -12,11 +12,21 @@ locals {
   # Shared hardened baseline applied to every bucket.
   s3_force_destroy = var.environment != "production" # stg can be torn down; prod protected
 
+  # Default: SSE-KMS with the AWS-managed aws/s3 key (the not-publicly-served buckets — artifacts).
   s3_encryption = {
     rule = {
-      # SSE-KMS with the AWS-managed aws/s3 key (set a CMK ARN to override — /infrastructure/kms).
       apply_server_side_encryption_by_default = { sse_algorithm = "aws:kms" }
       bucket_key_enabled                      = true # S3 Bucket Keys — fewer KMS calls (cost)
+    }
+  }
+
+  # CloudFront-served public buckets (fed, og-images) use SSE-S3 (AES256): CloudFront OAC can't
+  # decrypt objects under the AWS-managed aws/s3 KMS key (its key policy can't grant the CloudFront
+  # service principal kms:Decrypt), which 403s the SPA. The content is public, so AES256 at rest is
+  # the right stance here (/infrastructure/s3, /infrastructure/kms). A CMK would be the KMS alternative.
+  s3_encryption_public = {
+    rule = {
+      apply_server_side_encryption_by_default = { sse_algorithm = "AES256" }
     }
   }
 }
@@ -37,7 +47,7 @@ module "frontend_bucket" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 
-  server_side_encryption_configuration = local.s3_encryption
+  server_side_encryption_configuration = local.s3_encryption_public # AES256 — CloudFront OAC can't decrypt aws/s3 KMS
   # TLS-deny is folded into the combined OAC bucket policy in frontend.tf (a single policy per
   # bucket; the OAC allow needs the CloudFront ARN, so the policy can't live in this module call —
   # that would create a storage↔frontend cycle).
@@ -90,7 +100,7 @@ module "og_images_bucket" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 
-  server_side_encryption_configuration = local.s3_encryption
+  server_side_encryption_configuration = local.s3_encryption_public # AES256 — CloudFront OAC can't decrypt aws/s3 KMS
   # TLS-deny folded into the combined OAC bucket policy in frontend.tf (see frontend_bucket).
   attach_deny_insecure_transport_policy = false
 
