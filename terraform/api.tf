@@ -204,3 +204,58 @@ resource "aws_ssm_parameter" "bff_function_name" {
   type  = "String"
   value = module.bff.lambda_function_name
 }
+
+# --- og-edge Lambda@Edge (#6b) — owned by /infrastructure/lambda + /backend/og-edge-handler ---
+# 3-way UA classification at CloudFront Viewer Request (human passthrough / social OG / SEO crawler).
+# Lambda@Edge constraints: us-east-1, x86_64 (no arm64), no VPC, NO env vars, ≤128MB / ≤5s, dual-trust.
+
+data "archive_file" "og_edge_bootstrap" {
+  type                    = "zip"
+  output_path             = "${path.module}/bootstrap/og-edge-placeholder.zip"
+  source_content_filename = "index.js"
+  source_content          = "exports.handler = async (event) => event.Records[0].cf.request;" # viewer-request passthrough
+}
+
+resource "aws_s3_object" "og_edge_bootstrap" {
+  bucket = module.artifacts_bucket.s3_bucket_id
+  key    = "og-edge/bootstrap.zip"
+  source = data.archive_file.og_edge_bootstrap.output_path
+  etag   = data.archive_file.og_edge_bootstrap.output_md5
+}
+
+module "fn_og_edge" {
+  source    = "terraform-aws-modules/lambda/aws"
+  version   = "~> 7.0"
+  providers = { aws = aws.us_east_1 } # Lambda@Edge must be created in us-east-1
+
+  function_name = "${var.project}-og-edge-${var.environment}"
+  handler       = "index.handler"
+  runtime       = "nodejs22.x"
+  architectures = ["x86_64"] # Lambda@Edge does NOT support arm64
+  timeout       = 5          # viewer-request ceiling
+  memory_size   = 128        # viewer-request ceiling
+
+  lambda_at_edge = true # dual-trust (lambda + edgelambda) + publish a version (qualified ARN)
+
+  create_package          = false
+  ignore_source_code_hash = true
+  s3_existing_package     = { bucket = module.artifacts_bucket.s3_bucket_id, key = "og-edge/bootstrap.zip" }
+  # no VPC, no environment_variables — Lambda@Edge constraints
+
+  attach_policy_statements = true
+  policy_statements = {
+    og_read = {
+      effect    = "Allow"
+      actions   = ["s3:GetObject"] # serve cached OG images; BFF public routes reached over HTTPS (no IAM)
+      resources = ["arn:aws:s3:::${local.bucket_prefix}-og-images-${var.environment}/*"]
+    }
+  }
+
+  depends_on = [aws_s3_object.og_edge_bootstrap]
+}
+
+resource "aws_ssm_parameter" "lambda_edge_og_qualified_arn" {
+  name  = "/${var.environment}/api/lambda-edge-og-qualified-arn"
+  type  = "String"
+  value = module.fn_og_edge.lambda_function_qualified_arn
+}
