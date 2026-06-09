@@ -95,7 +95,13 @@ module "cloudfront" {
     use_forwarded_values       = false
     cache_policy_id            = "658327ea-f89d-4fab-a63d-7e88639e58f6" # managed CachingOptimized
     response_headers_policy_id = "67f7725c-6f97-4210-82d7-5512b31e9d03" # managed SecurityHeadersPolicy
-    # Lambda@Edge (og-edge) viewer-request is wired in api.tf (#6) once the function exists.
+    # og-edge Lambda@Edge (#6b): 3-way UA routing (human passthrough / social OG / SEO crawler)
+    lambda_function_association = {
+      viewer-request = {
+        lambda_arn   = module.fn_og_edge.lambda_function_qualified_arn
+        include_body = false
+      }
+    }
   }
 
   ordered_cache_behavior = [
