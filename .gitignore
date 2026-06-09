@@ -17,6 +17,10 @@ terraform.rc
 *.tfplan
 plan.out
 
+# Lambda module build output (regenerated on every plan/apply from source_path)
+terraform/builds/
+terraform/bootstrap/*.zip
+
 # Sensitive — never commit
 *.pem
 *.key

@@ -215,20 +215,14 @@ resource "aws_ssm_parameter" "bff_function_name" {
 # --- og-edge Lambda@Edge (#6b) — owned by /infrastructure/lambda + /backend/og-edge-handler ---
 # 3-way UA classification at CloudFront Viewer Request (human passthrough / social OG / SEO crawler).
 # Lambda@Edge constraints: us-east-1, x86_64 (no arm64), no VPC, NO env vars, ≤128MB / ≤5s, dual-trust.
-
-data "archive_file" "og_edge_bootstrap" {
-  type                    = "zip"
-  output_path             = "${path.module}/bootstrap/og-edge-placeholder.zip"
-  source_content_filename = "index.js"
-  source_content          = "exports.handler = async (event) => event.Records[0].cf.request;" # viewer-request passthrough
-}
-
-resource "aws_s3_object" "og_edge_bootstrap" {
-  bucket = module.artifacts_bucket.s3_bucket_id
-  key    = "og-edge/bootstrap.zip"
-  source = data.archive_file.og_edge_bootstrap.output_path
-  etag   = data.archive_file.og_edge_bootstrap.output_md5
-}
+#
+# Pattern-B EXCEPTION: unlike the BFF (app repo ships code, IaC owns config), the edge code lives HERE
+# and IaC owns its full lifecycle. CloudFront must reference a SPECIFIC published version (a qualified
+# ARN — $LATEST is rejected), so every code change must publish a new version AND atomically repoint the
+# distribution. Terraform does both in one apply (source hash → new version → new qualified_arn →
+# CloudFront association); a separate CI pipeline mutating the version would fight the CloudFront module's
+# state permanently. The handler is zero-dependency CJS deriving the API base from the Host header, so it
+# needs no bundling and no env injection — Terraform zips lambda-src/og-edge/ directly.
 
 module "fn_og_edge" {
   source    = "terraform-aws-modules/lambda/aws"
@@ -244,10 +238,9 @@ module "fn_og_edge" {
 
   lambda_at_edge = true # dual-trust (lambda + edgelambda) + publish a version (qualified ARN)
 
-  create_package          = false
-  ignore_source_code_hash = true
-  s3_existing_package     = { bucket = module.artifacts_bucket.s3_bucket_id, key = "og-edge/bootstrap.zip" }
-  # no VPC, no environment_variables — Lambda@Edge constraints
+  create_package = true                                # IaC owns the code: hash change → new version
+  source_path    = "${path.module}/lambda-src/og-edge" # single zero-dep index.js (no build step)
+  # no VPC, no environment_variables — Lambda@Edge constraints (API base derived from the Host header)
 
   attach_policy_statements = true
   policy_statements = {
@@ -257,8 +250,6 @@ module "fn_og_edge" {
       resources = ["arn:aws:s3:::${local.bucket_prefix}-og-images-${var.environment}/*"]
     }
   }
-
-  depends_on = [aws_s3_object.og_edge_bootstrap]
 }
 
 resource "aws_ssm_parameter" "lambda_edge_og_qualified_arn" {
