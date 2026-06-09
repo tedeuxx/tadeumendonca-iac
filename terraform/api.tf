@@ -54,7 +54,8 @@ module "bff" {
     SUBSCRIPTIONS_TABLE_NAME = module.subscriptions_table.dynamodb_table_id
     AUDITS_TABLE_NAME        = module.audits_table.dynamodb_table_id
     OG_IMAGES_BUCKET         = module.og_images_bucket.s3_bucket_id
-    # REDIS_* / SNS_TOPIC_ARN added in Phase 2 (cache.tf / sns.tf).
+    SES_FROM_ADDRESS         = local.ses_from_address # notifications sender (ses.tf)
+    # REDIS_* / SNS_TOPIC_ARN added later in Phase 2 (cache.tf / sns.tf).
   }
 
   # least-privilege exec role (/infrastructure/iam). Redis secret + SNS publish → Phase 2.
@@ -86,6 +87,13 @@ module "bff" {
       effect    = "Allow"
       actions   = ["s3:ListBucket"]
       resources = ["arn:aws:s3:::${local.bucket_prefix}-og-images-${var.environment}"]
+    }
+    # Send notification email via the SES API (no SMTP creds) — scoped to this env's domain identity
+    # (ses.tf). The Cc/Bcc-free SendEmail is authorized by the From identity ARN (/backend/notifications).
+    ses_send = {
+      effect    = "Allow"
+      actions   = ["ses:SendEmail"]
+      resources = ["arn:aws:ses:${var.aws_region}:${local.account}:identity/${local.frontend_host}"]
     }
   }
 

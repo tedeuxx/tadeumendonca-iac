@@ -14,4 +14,7 @@ locals {
   api_domain    = "api.${local.frontend_host}"
   callback_urls = ["https://${local.frontend_host}/callback"]
   logout_urls   = ["https://${local.frontend_host}/"]
+
+  # Notifications sender — per-env, on the verified SES domain identity (ses.tf).
+  ses_from_address = "no-reply@${local.frontend_host}"
 }
