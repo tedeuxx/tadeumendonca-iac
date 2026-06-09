@@ -26,7 +26,8 @@ module "policy_api_deploy" {
       {
         Sid    = "LambdaCodeDeploy"
         Effect = "Allow"
-        Action = ["lambda:UpdateFunctionCode", "lambda:PublishVersion", "lambda:GetFunction"]
+        Action = ["lambda:UpdateFunctionCode", "lambda:PublishVersion", "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration"] # GetFunctionConfiguration — the `wait function-updated` waiter
         # BFF + og-edge, by name pattern (<project>-<fn>-<env>) — never lambda:* on *.
         Resource = "arn:aws:lambda:${var.aws_region}:${local.account}:function:${var.project}-*-${var.environment}"
       },
