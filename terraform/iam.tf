@@ -35,7 +35,7 @@ module "policy_api_deploy" {
         Sid      = "ApiGatewayReimport"
         Effect   = "Allow"
         Action   = ["apigateway:PUT", "apigateway:POST", "apigateway:GET"]
-        Resource = "arn:aws:apigateway:${var.aws_region}::/apis/*"
+        Resource = "arn:aws:apigateway:${var.aws_region}::/restapis/*" # REST API v1 (put-rest-api + create-deployment)
       },
       {
         Sid      = "ArtifactsBucket"
