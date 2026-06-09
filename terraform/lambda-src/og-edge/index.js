@@ -22,7 +22,7 @@
 'use strict';
 
 const MAX_GENERATED_BODY = 40000; // viewer-request response ceiling (bytes, incl. headers ≈ body)
-const FETCH_TIMEOUT_MS = 1500; // stay well under the 5s viewer-request ceiling; fall back on timeout
+const FETCH_TIMEOUT_MS = 3500; // absorb a cold (in-VPC) BFF start; still <5s viewer-request ceiling — fall back on timeout
 const CACHE = 'public, max-age=300';
 
 // Order matters: a few UAs match both lists, and social link-unfurlers should win (they want OG tags,
