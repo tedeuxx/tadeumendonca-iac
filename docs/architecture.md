@@ -19,7 +19,7 @@ flowchart TD
   subgraph regional[us-east-1 - regional, AWS-managed]
     rwaf[WAF REGIONAL]
     cognito[Cognito User Pool + custom hosted UI]
-    apigw[API GW v2 HTTP - custom domain, stage throttling]
+    apigw[API GW REST v1 - custom domain, WAF, stage throttling]
   end
 
   subgraph vpc[VPC 10.x/16 - 2 AZs]
@@ -56,17 +56,19 @@ flowchart TD
   bff -->|HTTPS via NAT| nat --> sm
   nat --> ses
   rwaf -.protects.-> cognito
+  rwaf -.protects.-> apigw
 
   classDef phase2 stroke-dasharray: 4 3;
   class ses phase2;
 ```
 
-**Key paths.** The SPA loads from S3 via CloudFront + OAC (origin stays private). The API is an HTTP
-API on a custom domain fronting only the BFF Lambda; JWT is validated by the API GW Cognito authorizer
-(not in the BFF). The BFF runs in private subnets and reaches **DynamoDB and S3 over Gateway endpoints**
-(AWS backbone, off the NAT path) and Secrets Manager / SES over **NAT**. WAF: CLOUDFRONT scope on the
-distribution, REGIONAL scope on the **Cognito hosted UI only** — an HTTP API can't be WAF-fronted, so it
-relies on **stage throttling** instead (`/infrastructure/api-gateway`).
+**Key paths.** The SPA loads from S3 via CloudFront + OAC (origin stays private). The API is a **REST
+API (v1)** on a custom domain fronting only the BFF Lambda; JWT is validated by the API GW Cognito
+authorizer (not in the BFF). The BFF runs in private subnets and reaches **DynamoDB and S3 over Gateway
+endpoints** (AWS backbone, off the NAT path) and Secrets Manager / SES over **NAT**. WAF: CLOUDFRONT
+scope on the distribution, REGIONAL scope shared by the **REST API stage + the Cognito hosted UI** (a
+REST API is WAF-associable, unlike an HTTP API); stage throttling is the additional rate guard
+(`/infrastructure/api-gateway`).
 
 ## Terraform module / layer dependency graph
 
@@ -79,7 +81,7 @@ flowchart LR
   ddb[data.tf - DynamoDB x5 + SSM]
   auth[auth.tf - Cognito + WAF REGIONAL]
   frontend[frontend.tf - WAF CLOUDFRONT + CloudFront + OAC policies + Route53]
-  api[api.tf - API GW v2 + BFF Lambda Pattern B + Route53]
+  api[api.tf - API GW REST v1 + BFF Lambda Pattern B + WAF assoc + Route53]
   iam[iam.tf - OIDC roles api/fed]
   ssm[(SSM config bus - /env/...)]
 
