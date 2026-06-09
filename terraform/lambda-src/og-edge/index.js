@@ -32,12 +32,15 @@ const SOCIAL =
 const CRAWLER =
   /googlebot|bingbot|google-inspectiontool|duckduckbot|baiduspider|yandex|sogou|exabot|ia_archiver|applebot|petalbot|bingpreview|chrome-lighthouse/i;
 
-// URI → (type, slug). The homepage maps to the profile (the CV); /posts/<id> maps to a feed post
-// (Phase 2). Articles land in Phase 3; everything else is passthrough (humans + bots get the SPA shell).
+// URI → (type, slug). The homepage maps to the profile (the CV); /posts/<id> → a feed post (Phase 2);
+// /articles/<slug> → a long-form article (Phase 3). Everything else is passthrough (humans + bots get
+// the SPA shell).
 function route(uri) {
   if (uri === '/' || uri === '/index.html') return { type: 'profile', slug: 'me' };
   const post = /^\/posts\/([^/]+)\/?$/.exec(uri);
   if (post) return { type: 'posts', slug: post[1] };
+  const article = /^\/articles\/([^/]+)\/?$/.exec(uri);
+  if (article) return { type: 'articles', slug: article[1] };
   return null;
 }
 
