@@ -79,6 +79,14 @@ module "bff" {
       actions   = ["s3:GetObject", "s3:PutObject"]
       resources = ["arn:aws:s3:::${local.bucket_prefix}-og-images-${var.environment}/*"]
     }
+    # ListBucket on the bucket itself so a cache-miss HeadObject returns 404 (not 403): without
+    # s3:ListBucket, S3 hides existence and returns 403 for absent keys, which the og-image
+    # cache-aside would surface as a 500 instead of regenerating (/backend/og-image-generator).
+    og_list = {
+      effect    = "Allow"
+      actions   = ["s3:ListBucket"]
+      resources = ["arn:aws:s3:::${local.bucket_prefix}-og-images-${var.environment}"]
+    }
   }
 
   depends_on = [aws_s3_object.bff_bootstrap]
