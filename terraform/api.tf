@@ -127,6 +127,13 @@ resource "aws_api_gateway_stage" "this" {
     destination_arn = aws_cloudwatch_log_group.apigw.arn
     format          = jsonencode({ requestId = "$context.requestId", ip = "$context.identity.sourceIp", method = "$context.httpMethod", path = "$context.path", status = "$context.status", latency = "$context.responseLatency" })
   }
+
+  # The api repo republishes the contract via put-rest-api + create-deployment, which re-points the
+  # stage to a fresh deployment. IaC seeds the initial deployment but must NOT revert that pointer on
+  # later applies (Pattern B for the contract) — otherwise /profile etc. drop back to the seed body.
+  lifecycle {
+    ignore_changes = [deployment_id]
+  }
 }
 
 # Stage throttling + per-method metrics — the native rate guard (/infrastructure/api-gateway).
