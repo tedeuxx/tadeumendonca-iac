@@ -41,6 +41,9 @@ function route(uri) {
   if (post) return { type: 'posts', slug: post[1] };
   const article = /^\/articles\/([^/]+)\/?$/.exec(uri);
   if (article) return { type: 'articles', slug: article[1] };
+  // /p/<code> → short share URL; the BFF resolves the code → post for og-meta/prerender.
+  const short = /^\/p\/([a-zA-Z0-9]{6,8})\/?$/.exec(uri);
+  if (short) return { type: 'p', slug: short[1] };
   return null;
 }
 

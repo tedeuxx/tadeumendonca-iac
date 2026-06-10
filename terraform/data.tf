@@ -169,6 +169,46 @@ module "audits_table" {
   deletion_protection_enabled    = local.ddb_deletion_protection
 }
 
+# comments — post-moderated comments on posts. by-post GSI lists a post's comments oldest-first.
+module "comments_table" {
+  source  = "terraform-aws-modules/dynamodb-table/aws"
+  version = "~> 4.0"
+
+  name         = "${var.project}-comments-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "comment_id"
+  attributes = [
+    { name = "comment_id", type = "S" },
+    { name = "post_id", type = "S" },
+    { name = "created_at", type = "S" },
+  ]
+  global_secondary_indexes = [{
+    name            = "by-post"
+    hash_key        = "post_id"
+    range_key       = "created_at"
+    projection_type = "ALL"
+  }]
+
+  server_side_encryption_enabled = true
+  point_in_time_recovery_enabled = true
+  deletion_protection_enabled    = local.ddb_deletion_protection
+}
+
+# shortlinks — code → target map for share URLs (tadeumendonca.io/p/<code>). Hash on the opaque code.
+module "shortlinks_table" {
+  source  = "terraform-aws-modules/dynamodb-table/aws"
+  version = "~> 4.0"
+
+  name         = "${var.project}-shortlinks-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "code"
+  attributes   = [{ name = "code", type = "S" }]
+
+  server_side_encryption_enabled = true
+  point_in_time_recovery_enabled = true
+  deletion_protection_enabled    = local.ddb_deletion_protection
+}
+
 # SSM config bus — table names (IAM access; no secret/endpoint). app repos read at deploy.
 resource "aws_ssm_parameter" "profile_table_name" {
   name  = "/${var.environment}/data/profile-table-name"
@@ -198,4 +238,16 @@ resource "aws_ssm_parameter" "audits_table_name" {
   name  = "/${var.environment}/data/audits-table-name"
   type  = "String"
   value = module.audits_table.dynamodb_table_id
+}
+
+resource "aws_ssm_parameter" "comments_table_name" {
+  name  = "/${var.environment}/data/comments-table-name"
+  type  = "String"
+  value = module.comments_table.dynamodb_table_id
+}
+
+resource "aws_ssm_parameter" "shortlinks_table_name" {
+  name  = "/${var.environment}/data/shortlinks-table-name"
+  type  = "String"
+  value = module.shortlinks_table.dynamodb_table_id
 }
