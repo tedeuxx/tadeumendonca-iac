@@ -1,7 +1,46 @@
 # Auth layer — owned by /infrastructure/cognito + /infrastructure/waf.
-# Cognito user pool (3 profiles: public / registered self-signup / admin) with a public PKCE client
-# and a custom hosted-UI domain; a shared REGIONAL WAF fronting the open signup surface. SES is
-# deferred to Phase 2 (#17). The WAF↔API-GW association lives in api.tf (#6).
+# Cognito user pool: SOCIAL-ONLY via Google (no native signup); profiles admin + registered (public =
+# unauthenticated). MFA OFF (federated → Google 2FA), threat protection ENFORCED, email via the verified
+# SES identity. A small trigger (fn-cognito-groups) assigns groups (admin by email allowlist) + injects
+# the group claim. Shared REGIONAL WAF fronts the hosted UI; the WAF↔API-GW association is in api.tf.
+
+# Google OAuth client (id + secret) from Secrets Manager — provisioned out-of-band (owner created the
+# Google client). Both kept together in the secret; only the secret value is sensitive.
+data "aws_secretsmanager_secret_version" "google_oauth" {
+  secret_id = "${var.project}/${var.environment}/google-oauth"
+}
+locals {
+  google_oauth = jsondecode(data.aws_secretsmanager_secret_version.google_oauth.secret_string)
+}
+
+# Cognito trigger — assigns federated users to 'registered' (+ 'admin' by allowlist) and injects the
+# group claim into the token. NO module.cognito references (would create a cycle): the pool id comes
+# from the trigger EVENT, and the IAM policy is scoped to userpool/* in this account. Non-VPC, fail-open.
+module "fn_cognito_groups" {
+  source  = "terraform-aws-modules/lambda/aws"
+  version = "~> 7.0"
+
+  function_name = "${var.project}-cognito-groups-${var.environment}"
+  handler       = "index.handler"
+  runtime       = "nodejs22.x"
+  architectures = ["arm64"]
+  timeout       = 5
+  memory_size   = 128
+
+  create_package = true
+  source_path    = "${path.module}/lambda-src/cognito-groups"
+
+  environment_variables = { ADMIN_EMAILS = join(",", var.admin_emails) }
+
+  attach_policy_statements = true
+  policy_statements = {
+    groups = {
+      effect    = "Allow"
+      actions   = ["cognito-idp:AdminAddUserToGroup", "cognito-idp:AdminListGroupsForUser"]
+      resources = ["arn:aws:cognito-idp:${var.aws_region}:${local.account}:userpool/*"] # pool id is post-apply; one pool
+    }
+  }
+}
 
 module "cognito" {
   source  = "lgallard/cognito-user-pool/aws"
@@ -10,26 +49,49 @@ module "cognito" {
   user_pool_name           = "${var.project}-${var.environment}"
   username_attributes      = ["email"]
   auto_verified_attributes = ["email"]
-  mfa_configuration        = "OPTIONAL"
+  mfa_configuration        = "OFF" # social-only → MFA is the IdP's (Google 2FA)
 
-  password_policy = {
-    minimum_length                   = 12
-    require_uppercase                = true
-    require_lowercase                = true
-    require_numbers                  = true
-    require_symbols                  = true
-    temporary_password_validity_days = 7
-    password_history_size            = 24
+  # Threat protection — adaptive auth + leaked-credential checks (Plus feature tier, ~$0.05/MAU).
+  user_pool_add_ons = { advanced_security_mode = "ENFORCED" }
+
+  # No native self-signup — users are provisioned on first Google login (federation).
+  admin_create_user_config = { allow_admin_create_user_only = true }
+
+  # Email via the verified SES domain identity (ses.tf) — same account, no extra SES auth policy needed.
+  email_configuration = {
+    email_sending_account = "DEVELOPER"
+    from_email_address    = local.ses_from_address
+    source_arn            = "arn:aws:ses:${var.aws_region}:${local.account}:identity/${local.frontend_host}"
   }
-
-  admin_create_user_config = { allow_admin_create_user_only = false } # registered users self-signup
 
   user_groups = [
     { name = "admin", precedence = 1 },
     { name = "registered", precedence = 10 },
-  ] # public = no group
+  ] # public = no group (unauthenticated)
 
-  # single public app client (the SPA) — Authorization Code + PKCE, no secret
+  # Google as the only identity provider — social-only
+  identity_providers = [{
+    provider_name = "Google"
+    provider_type = "Google"
+    provider_details = {
+      client_id        = local.google_oauth.client_id
+      client_secret    = local.google_oauth.client_secret
+      authorize_scopes = "openid email profile"
+    }
+    attribute_mapping = {
+      email    = "email"
+      name     = "name"
+      username = "sub"
+    }
+  }]
+
+  # Cognito trigger Lambdas (group assignment + claim injection)
+  lambda_config = {
+    post_authentication  = module.fn_cognito_groups.lambda_function_arn
+    pre_token_generation = module.fn_cognito_groups.lambda_function_arn
+  }
+
+  # single PUBLIC SPA client — Authorization Code + PKCE, Google-only (no COGNITO native IdP)
   client_name                                 = "spa"
   client_generate_secret                      = false
   client_allowed_oauth_flows                  = ["code"]
@@ -37,13 +99,22 @@ module "cognito" {
   client_allowed_oauth_scopes                 = ["openid", "email", "profile"]
   client_callback_urls                        = local.callback_urls
   client_logout_urls                          = local.logout_urls
-  client_default_redirect_uri                 = local.callback_urls[0] # must be one of the callback URLs
-  client_supported_identity_providers         = ["COGNITO"]
-  client_explicit_auth_flows                  = ["ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_USER_SRP_AUTH"]
+  client_default_redirect_uri                 = local.callback_urls[0]
+  client_supported_identity_providers         = ["Google"]
+  client_explicit_auth_flows                  = ["ALLOW_REFRESH_TOKEN_AUTH"]
 
   # custom hosted-UI domain is the standard — not the Cognito-generated prefix
   domain                 = local.auth_domain
   domain_certificate_arn = data.aws_acm_certificate.main.arn # ISSUED cert in us-east-1
+}
+
+# Allow Cognito to invoke the trigger Lambda.
+resource "aws_lambda_permission" "cognito_groups" {
+  statement_id  = "AllowCognitoInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = module.fn_cognito_groups.lambda_function_name
+  principal     = "cognito-idp.amazonaws.com"
+  source_arn    = module.cognito.arn
 }
 
 # WAF log group — name MUST start with aws-waf-logs- (AWS mandate). /infrastructure/cloudwatch
