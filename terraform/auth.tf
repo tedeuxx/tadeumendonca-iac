@@ -119,6 +119,26 @@ resource "aws_lambda_permission" "cognito_groups" {
   source_arn    = module.cognito.arn
 }
 
+# Hosted-UI branding (classic, managed_login_version=1) — on-brand with the site's look: dark slate
+# background + cyan accent (the palette from the OG cards / SPA). CSS uses only the documented
+# customizable classes + safe property combos (Cognito validates strictly). The "Continue with Google"
+# idpButton keeps Google's standard styling (brand guidelines) on the dark background.
+resource "aws_cognito_user_pool_ui_customization" "this" {
+  user_pool_id = module.cognito.id
+  image_file   = filebase64("${path.module}/assets/cognito-logo.png")
+  css          = <<-CSS
+    .background-customizable { background-color: #0f172a; }
+    .banner-customizable { background-color: #0f172a; }
+    .label-customizable { color: #f8fafc; }
+    .textDescription-customizable { color: #94a3b8; }
+    .idpDescription-customizable { color: #94a3b8; }
+    .legalText-customizable { color: #94a3b8; }
+    .submitButton-customizable { background-color: #38bdf8; }
+    .submitButton-customizable:hover { background-color: #0ea5e9; }
+    .logo-customizable { max-width: 380px; max-height: 72px; }
+  CSS
+}
+
 # WAF log group — name MUST start with aws-waf-logs- (AWS mandate). /infrastructure/cloudwatch
 resource "aws_cloudwatch_log_group" "waf" {
   name              = "aws-waf-logs-${var.project}-${var.environment}"
