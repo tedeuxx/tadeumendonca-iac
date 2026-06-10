@@ -24,8 +24,8 @@ module "fn_cognito_groups" {
   handler       = "index.handler"
   runtime       = "nodejs22.x"
   architectures = ["arm64"]
-  timeout       = 5
-  memory_size   = 128
+  timeout       = 10  # headroom over cold start + the capped membership sync (a pre-token timeout breaks login)
+  memory_size   = 256 # more memory = more CPU = faster cold start (SDK init) for this on-login-path trigger
 
   create_package = true
   source_path    = "${path.module}/lambda-src/cognito-groups"
