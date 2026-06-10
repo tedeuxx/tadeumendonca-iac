@@ -51,7 +51,9 @@ module "cognito" {
   auto_verified_attributes = ["email"]
   mfa_configuration        = "OFF" # social-only → MFA is the IdP's (Google 2FA)
 
-  # Threat protection — adaptive auth + leaked-credential checks (Plus feature tier, ~$0.05/MAU).
+  # Threat protection requires the PLUS tier (the default ESSENTIALS rejects advanced_security ENFORCED
+  # with FeatureUnavailableInTierException). PLUS ≈ $0.05/MAU — the owner accepted this for threat prot.
+  user_pool_tier    = "PLUS"
   user_pool_add_ons = { advanced_security_mode = "ENFORCED" }
 
   # No native self-signup — users are provisioned on first Google login (federation).
