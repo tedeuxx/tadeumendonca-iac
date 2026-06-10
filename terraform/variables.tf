@@ -33,6 +33,12 @@ variable "aws_region" {
 # vpc_cidr / azs removed — the BFF is non-VPC (no NAT, see api.tf). Reintroduce with the VPC when an
 # in-VPC dependency (Redis) lands.
 
+variable "admin_emails" {
+  type        = list(string)
+  description = "Emails granted the Cognito 'admin' group by the fn-cognito-groups trigger (allowlist)."
+  default     = []
+}
+
 variable "apex_domain" {
   type        = string
   description = "Registrable apex domain. Hosted zone name + base for per-env hosts (auth/api/frontend)."
