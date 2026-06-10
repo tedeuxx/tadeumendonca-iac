@@ -30,28 +30,8 @@ variable "aws_region" {
   }
 }
 
-variable "vpc_cidr" {
-  type        = string
-  description = "VPC IPv4 CIDR block (/16). Subnets are carved as /24 (8-bit) within it."
-  default     = "10.0.0.0/16"
-  validation {
-    condition     = can(cidrhost(var.vpc_cidr, 0))
-    error_message = "vpc_cidr must be a valid IPv4 CIDR block."
-  }
-}
-
-variable "azs" {
-  type        = list(string)
-  description = "Availability Zones for subnets. Exactly 2 AZs (cost/resilience trade-off)."
-  validation {
-    condition     = length(var.azs) == 2
-    error_message = "azs must contain exactly 2 Availability Zones."
-  }
-  validation {
-    condition     = alltrue([for az in var.azs : can(regex("^[a-z]{2}-[a-z]+-[0-9][a-z]$", az))])
-    error_message = "each az must be a valid Availability Zone id (e.g. us-east-1a)."
-  }
-}
+# vpc_cidr / azs removed — the BFF is non-VPC (no NAT, see api.tf). Reintroduce with the VPC when an
+# in-VPC dependency (Redis) lands.
 
 variable "apex_domain" {
   type        = string

@@ -21,7 +21,11 @@ resource "aws_s3_object" "bff_bootstrap" {
   etag   = data.archive_file.bootstrap.output_md5
 }
 
-# BFF Lambda — in-VPC Hono modular monolith. Pattern B (placeholder zip; api repo ships code).
+# BFF Lambda — Hono modular monolith. Pattern B (placeholder zip; api repo ships code).
+# NON-VPC by deliberate cost choice: the BFF reaches DynamoDB/S3/SES/Cognito/SSM over their public AWS
+# endpoints (IAM-auth'd, TLS) — no NAT needed. It runs in the VPC ONLY when it has an in-VPC dependency
+# (ElastiCache/Redis, deferred); re-add vpc_subnet_ids + a SG + attach_network_policy then. Bonus:
+# non-VPC = faster cold starts (no ENI attach). (/infrastructure/lambda, /infrastructure/vpc)
 module "bff" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "~> 7.0"
@@ -38,11 +42,7 @@ module "bff" {
   ignore_source_code_hash = true
   s3_existing_package     = { bucket = module.artifacts_bucket.s3_bucket_id, key = "bff/bootstrap.zip" }
 
-  # in-VPC (private subnets) — DynamoDB via the Gateway endpoint, AWS APIs via NAT
-  vpc_subnet_ids         = module.vpc.private_subnets
-  vpc_security_group_ids = [aws_security_group.lambda.id]
-  attach_network_policy  = true
-  attach_tracing_policy  = true # AWSXRayDaemonWriteAccess
+  attach_tracing_policy = true # AWSXRayDaemonWriteAccess
 
   environment_variables = {
     ENVIRONMENT              = var.environment
