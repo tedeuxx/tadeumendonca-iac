@@ -1,0 +1,50 @@
+name: sonar
+
+# SonarCloud IaC quality gate for the Terraform (/workflow/sonarcloud). Standalone — kept out of
+# terraform-plan.yml so it can run on push to develop/main (new-code baseline) WITHOUT triggering
+# the AWS OIDC plan. checkov (policy/security) stays in terraform-plan.yml; the two are complementary.
+# Runs on PRs (gate + PR decoration) and on push to develop/main (sets SonarCloud's new-code baseline).
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "terraform/**"
+      - "sonar-project.properties"
+      - ".github/workflows/sonar.yml"
+  push:
+    branches: [develop, main]
+    paths:
+      - "terraform/**"
+      - "sonar-project.properties"
+      - ".github/workflows/sonar.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonar-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Node 20 is deprecated on runners (forced off 2026-06-16). Run bundled JS actions on Node 24.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        # Full history — SonarCloud uses git blame for accurate new-code / authorship attribution.
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # `qualitygate.wait=true` polls SonarCloud and FAILS the job on a red gate.
+      # Requires CI-based analysis (SonarCloud Automatic Analysis must be OFF for this project).
+      - name: SonarCloud scan (quality gate blocks)
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: -Dsonar.qualitygate.wait=true
