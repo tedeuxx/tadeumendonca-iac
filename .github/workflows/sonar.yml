@@ -3,14 +3,13 @@ name: sonar
 # SonarCloud IaC quality gate for the Terraform (/workflow/sonarcloud). Standalone — kept out of
 # terraform-plan.yml so it can run on push to develop/main (new-code baseline) WITHOUT triggering
 # the AWS OIDC plan. checkov (policy/security) stays in terraform-plan.yml; the two are complementary.
-# Runs on PRs (gate + PR decoration) and on push to develop/main (sets SonarCloud's new-code baseline).
+# Runs on EVERY PR to develop/main so the required `sonar` check always reports a status — a path filter
+# (the "Detect IaC changes" step) skips the scan for docs-only PRs, which still finish the job green.
+# Without this, a required check + a trigger-level `paths:` filter leaves docs-only PRs BLOCKED forever
+# (the check never runs). On push to develop/main (terraform paths only) it sets SonarCloud's baseline.
 on:
   pull_request:
     branches: [develop, main]
-    paths:
-      - "terraform/**"
-      - "sonar-project.properties"
-      - ".github/workflows/sonar.yml"
   push:
     branches: [develop, main]
     paths:
@@ -39,9 +38,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Does this change touch Terraform/config, or is it docs-only? Docs-only PRs skip the scan below
+      # but the job still completes green, satisfying the required `sonar` check. (Free on public repos.)
+      - name: Detect IaC changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            iac:
+              - 'terraform/**'
+              - 'sonar-project.properties'
+              - '.github/workflows/sonar.yml'
+
       # `qualitygate.wait=true` polls SonarCloud and FAILS the job on a red gate.
       # Requires CI-based analysis (SonarCloud Automatic Analysis must be OFF for this project).
       - name: SonarCloud scan (quality gate blocks)
+        if: steps.changes.outputs.iac == 'true'
         uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
