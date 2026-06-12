@@ -67,7 +67,9 @@ module "posts_table" {
   deletion_protection_enabled    = local.ddb_deletion_protection
 }
 
-# articles — by-slug (routing) + by-tag (primary tag, newest-first).
+# articles — by-slug (routing) + by-tag (primary tag) + by-created (unified-feed list). Like posts,
+# by-created is SPARSE: gsi_pk = "ARTICLE" is set only when published, so the feed/list query
+# (gsi_pk = "ARTICLE", created_at desc) returns published articles newest-first WITHOUT a Scan.
 module "articles_table" {
   source  = "terraform-aws-modules/dynamodb-table/aws"
   version = "~> 4.0"
@@ -79,6 +81,7 @@ module "articles_table" {
     { name = "article_id", type = "S" },
     { name = "slug", type = "S" },
     { name = "tag", type = "S" },
+    { name = "gsi_pk", type = "S" },
     { name = "created_at", type = "S" },
   ]
   global_secondary_indexes = [
@@ -90,6 +93,12 @@ module "articles_table" {
     {
       name            = "by-tag"
       hash_key        = "tag"
+      range_key       = "created_at"
+      projection_type = "ALL"
+    },
+    {
+      name            = "by-created"
+      hash_key        = "gsi_pk"
       range_key       = "created_at"
       projection_type = "ALL"
     },
