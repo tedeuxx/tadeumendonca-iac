@@ -55,6 +55,7 @@ module "bff" {
     AUDITS_TABLE_NAME        = module.audits_table.dynamodb_table_id
     COMMENTS_TABLE_NAME      = module.comments_table.dynamodb_table_id
     SHORTLINKS_TABLE_NAME    = module.shortlinks_table.dynamodb_table_id
+    POLLS_TABLE_NAME         = module.polls_table.dynamodb_table_id
     OG_IMAGES_BUCKET         = module.og_images_bucket.s3_bucket_id
     SES_FROM_ADDRESS         = local.ses_from_address # notifications sender (ses.tf)
     # REDIS_* / SNS_TOPIC_ARN added later in Phase 2 (cache.tf / sns.tf).
