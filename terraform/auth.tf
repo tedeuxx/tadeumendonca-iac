@@ -119,6 +119,26 @@ resource "aws_lambda_permission" "cognito_groups" {
   source_arn    = module.cognito.arn
 }
 
+# Test-only app client (NON-PROD) — enables USER_PASSWORD_AUTH so CI/E2E can mint a token for a native
+# test user WITHOUT Google's interactive login (the SPA client is Google-only and can't be automated).
+# Scoped to its own client so the public SPA client stays Google-only; no OAuth/hosted-UI, no secret.
+# The test user is provisioned out-of-band (admin-create-user + permanent password + admin group).
+resource "aws_cognito_user_pool_client" "test" {
+  count        = var.environment == "production" ? 0 : 1
+  name         = "${var.project}-test-${var.environment}"
+  user_pool_id = module.cognito.id
+
+  generate_secret     = false
+  explicit_auth_flows = ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+
+  access_token_validity = 1
+  id_token_validity     = 1
+  token_validity_units {
+    access_token = "hours"
+    id_token     = "hours"
+  }
+}
+
 # Hosted-UI branding (classic, managed_login_version=1) — on-brand with the site's look: dark slate
 # background + cyan accent (the palette from the OG cards / SPA). CSS uses only the documented
 # customizable classes + safe property combos (Cognito validates strictly). The "Continue with Google"
@@ -237,6 +257,14 @@ resource "aws_ssm_parameter" "cognito_client_id" {
   name  = "/${var.environment}/auth/cognito-client-id"
   type  = "String"
   value = module.cognito.client_ids[0] # single SPA client
+}
+
+# Test client id (NON-PROD) — read by CI to mint the test user's token (username/password from secrets).
+resource "aws_ssm_parameter" "cognito_test_client_id" {
+  count = var.environment == "production" ? 0 : 1
+  name  = "/${var.environment}/auth/cognito-test-client-id"
+  type  = "String"
+  value = aws_cognito_user_pool_client.test[0].id
 }
 
 resource "aws_ssm_parameter" "cognito_domain" {
