@@ -113,6 +113,32 @@ module "og_images_bucket" {
   }]
 }
 
+# 4. Assets — ONE generic object store for any feature that needs one (Phase 3: user avatars under
+# avatars/), with per-feature isolation via root subfolders. Private, read publicly via the main
+# CloudFront /assets/* behavior (OAC in frontend.tf). AES256 like og-images (CloudFront OAC can't
+# decrypt the aws/s3 KMS key). No lifecycle expiry — avatars persist; versioning off (each key is
+# overwritten in place by the uploader).
+module "assets_bucket" {
+  source  = "terraform-aws-modules/s3-bucket/aws"
+  version = "~> 4.0"
+
+  bucket        = "${local.bucket_prefix}-assets-${var.environment}"
+  force_destroy = local.s3_force_destroy
+
+  control_object_ownership = true
+  object_ownership         = "BucketOwnerEnforced"
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+
+  server_side_encryption_configuration  = local.s3_encryption_public # AES256 — CloudFront OAC can't decrypt aws/s3 KMS
+  attach_deny_insecure_transport_policy = false                      # folded into the combined OAC policy in frontend.tf
+
+  versioning = { enabled = false }
+}
+
 # SSM config bus (/infrastructure/ssm) — IaC writes, app repos read at deploy. Non-sensitive names.
 resource "aws_ssm_parameter" "frontend_bucket_name" {
   name  = "/${var.environment}/frontend/s3-bucket-name"
@@ -130,4 +156,10 @@ resource "aws_ssm_parameter" "og_images_bucket_name" {
   name  = "/${var.environment}/storage/og-images-bucket-name"
   type  = "String"
   value = module.og_images_bucket.s3_bucket_id
+}
+
+resource "aws_ssm_parameter" "assets_bucket_name" {
+  name  = "/${var.environment}/storage/assets-bucket-name"
+  type  = "String"
+  value = module.assets_bucket.s3_bucket_id
 }

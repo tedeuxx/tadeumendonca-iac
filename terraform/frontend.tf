@@ -84,6 +84,10 @@ module "cloudfront" {
       domain_name           = module.og_images_bucket.s3_bucket_bucket_regional_domain_name
       origin_access_control = "s3_oac"
     }
+    assets = {
+      domain_name           = module.assets_bucket.s3_bucket_bucket_regional_domain_name
+      origin_access_control = "s3_oac"
+    }
   }
 
   default_cache_behavior = {
@@ -108,6 +112,16 @@ module "cloudfront" {
     {
       path_pattern           = "/og/*"
       target_origin_id       = "og"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["GET", "HEAD"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = true
+      use_forwarded_values   = false
+      cache_policy_id        = "658327ea-f89d-4fab-a63d-7e88639e58f6" # CachingOptimized
+    },
+    {
+      path_pattern           = "/assets/*"
+      target_origin_id       = "assets"
       viewer_protocol_policy = "redirect-to-https"
       allowed_methods        = ["GET", "HEAD"]
       cached_methods         = ["GET", "HEAD"]
@@ -204,6 +218,42 @@ data "aws_iam_policy_document" "og_bucket" {
   }
 }
 
+data "aws_iam_policy_document" "assets_bucket" {
+  statement {
+    sid     = "DenyInsecureTransport"
+    effect  = "Deny"
+    actions = ["s3:*"]
+    resources = [
+      module.assets_bucket.s3_bucket_arn,
+      "${module.assets_bucket.s3_bucket_arn}/*",
+    ]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+  statement {
+    sid       = "AllowCloudFrontOAC"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["${module.assets_bucket.s3_bucket_arn}/*"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [module.cloudfront.cloudfront_distribution_arn]
+    }
+  }
+}
+
 resource "aws_s3_bucket_policy" "frontend" {
   bucket = module.frontend_bucket.s3_bucket_id
   policy = data.aws_iam_policy_document.frontend_bucket.json
@@ -212,6 +262,11 @@ resource "aws_s3_bucket_policy" "frontend" {
 resource "aws_s3_bucket_policy" "og" {
   bucket = module.og_images_bucket.s3_bucket_id
   policy = data.aws_iam_policy_document.og_bucket.json
+}
+
+resource "aws_s3_bucket_policy" "assets" {
+  bucket = module.assets_bucket.s3_bucket_id
+  policy = data.aws_iam_policy_document.assets_bucket.json
 }
 
 # Route53 A-alias for the custom frontend domain → the CloudFront distribution.

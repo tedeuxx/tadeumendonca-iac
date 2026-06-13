@@ -246,6 +246,34 @@ module "polls_table" {
   deletion_protection_enabled    = local.ddb_deletion_protection
 }
 
+# users — per-account profile + preferences (Phase 3), keyed by the Cognito sub (one item per
+# signed-in user): nickname/apelido, avatar key, communication prefs. The SPARSE `by-digest` GSI lets
+# the newsletter-digest Lambda Query opted-in users by cadence WITHOUT a Scan — digest_schedule
+# (= "daily" | "weekly") is written ONLY while the user is opted in, so opted-out users carry no key
+# and never appear in the index. Entity name is English (`users`, not "usuarios"); the UI stays pt-BR.
+module "users_table" {
+  source  = "terraform-aws-modules/dynamodb-table/aws"
+  version = "~> 4.0"
+
+  name         = "${var.project}-users-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "cognito_sub"
+  attributes = [
+    { name = "cognito_sub", type = "S" },
+    { name = "digest_schedule", type = "S" },
+  ]
+  global_secondary_indexes = [{
+    name            = "by-digest"
+    hash_key        = "digest_schedule"
+    range_key       = "cognito_sub"
+    projection_type = "ALL"
+  }]
+
+  server_side_encryption_enabled = true
+  point_in_time_recovery_enabled = true
+  deletion_protection_enabled    = local.ddb_deletion_protection
+}
+
 # SSM config bus — table names (IAM access; no secret/endpoint). app repos read at deploy.
 resource "aws_ssm_parameter" "profile_table_name" {
   name  = "/${var.environment}/data/profile-table-name"
@@ -293,4 +321,10 @@ resource "aws_ssm_parameter" "polls_table_name" {
   name  = "/${var.environment}/data/polls-table-name"
   type  = "String"
   value = module.polls_table.dynamodb_table_id
+}
+
+resource "aws_ssm_parameter" "users_table_name" {
+  name  = "/${var.environment}/data/users-table-name"
+  type  = "String"
+  value = module.users_table.dynamodb_table_id
 }
