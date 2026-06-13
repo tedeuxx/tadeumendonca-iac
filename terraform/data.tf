@@ -218,6 +218,34 @@ module "shortlinks_table" {
   deletion_protection_enabled    = local.ddb_deletion_protection
 }
 
+# polls — enquete surfaced in the aside. by-created is SPARSE (gsi_pk = "POLL" set only when
+# published) so the "current poll" query (gsi_pk = "POLL", created_at desc, limit 1) returns the
+# newest published poll WITHOUT a Scan, exactly like posts. Vote tallies live as a counter map on the
+# poll item, ADDed atomically on each vote — anonymous, 1/browser (localStorage), no votes table.
+module "polls_table" {
+  source  = "terraform-aws-modules/dynamodb-table/aws"
+  version = "~> 4.0"
+
+  name         = "${var.project}-polls-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "poll_id"
+  attributes = [
+    { name = "poll_id", type = "S" },
+    { name = "gsi_pk", type = "S" },
+    { name = "created_at", type = "S" },
+  ]
+  global_secondary_indexes = [{
+    name            = "by-created"
+    hash_key        = "gsi_pk"
+    range_key       = "created_at"
+    projection_type = "ALL"
+  }]
+
+  server_side_encryption_enabled = true
+  point_in_time_recovery_enabled = true
+  deletion_protection_enabled    = local.ddb_deletion_protection
+}
+
 # SSM config bus — table names (IAM access; no secret/endpoint). app repos read at deploy.
 resource "aws_ssm_parameter" "profile_table_name" {
   name  = "/${var.environment}/data/profile-table-name"
@@ -259,4 +287,10 @@ resource "aws_ssm_parameter" "shortlinks_table_name" {
   name  = "/${var.environment}/data/shortlinks-table-name"
   type  = "String"
   value = module.shortlinks_table.dynamodb_table_id
+}
+
+resource "aws_ssm_parameter" "polls_table_name" {
+  name  = "/${var.environment}/data/polls-table-name"
+  type  = "String"
+  value = module.polls_table.dynamodb_table_id
 }
