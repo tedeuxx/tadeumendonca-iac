@@ -56,7 +56,9 @@ module "bff" {
     COMMENTS_TABLE_NAME      = module.comments_table.dynamodb_table_id
     SHORTLINKS_TABLE_NAME    = module.shortlinks_table.dynamodb_table_id
     POLLS_TABLE_NAME         = module.polls_table.dynamodb_table_id
+    USERS_TABLE_NAME         = module.users_table.dynamodb_table_id
     OG_IMAGES_BUCKET         = module.og_images_bucket.s3_bucket_id
+    ASSETS_BUCKET            = module.assets_bucket.s3_bucket_id
     SES_FROM_ADDRESS         = local.ses_from_address # notifications sender (ses.tf)
     # REDIS_* / SNS_TOPIC_ARN added later in Phase 2 (cache.tf / sns.tf).
   }
@@ -90,6 +92,14 @@ module "bff" {
       effect    = "Allow"
       actions   = ["s3:ListBucket"]
       resources = ["arn:aws:s3:::${local.bucket_prefix}-og-images-${var.environment}"]
+    }
+    # Avatar (and future asset) writes — the BFF resizes user uploads and stores them in the generic
+    # assets bucket (avatars/<sub>). Get/Put/Delete on the bucket (app-managed object store); the public
+    # read path is CloudFront OAC (frontend.tf), not this role.
+    assets_store = {
+      effect    = "Allow"
+      actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+      resources = ["arn:aws:s3:::${local.bucket_prefix}-assets-${var.environment}/*"]
     }
     # Send notification email via the SES API (no SMTP creds) — scoped to this env's domain identity
     # (ses.tf). The Cc/Bcc-free SendEmail is authorized by the From identity ARN (/backend/notifications).
