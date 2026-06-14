@@ -286,3 +286,119 @@ resource "aws_ssm_parameter" "lambda_edge_og_qualified_arn" {
   type  = "String"
   value = module.fn_og_edge.lambda_function_qualified_arn
 }
+
+# --- Newsletter digest Lambda (Phase 3) — owned by /infrastructure/lambda + /backend/notifications ---
+# A scheduled, NON-API Lambda (no API GW integration): EventBridge fires it on a daily and a weekly cron;
+# it Queries opted-in users by cadence via the users `by-digest` SPARSE GSI (NO Scan), builds a digest of
+# recent posts/articles, and sends one email per user via SES. Pattern B like the BFF — IaC owns the
+# config + a placeholder zip; the api repo ships the real handler as a SEPARATE bundle via
+# update-function-code (digest-function-name on the SSM bus). Non-VPC for the same cost reason as the BFF.
+resource "aws_s3_object" "digest_bootstrap" {
+  bucket = module.artifacts_bucket.s3_bucket_id
+  key    = "digest/bootstrap.zip"
+  source = data.archive_file.bootstrap.output_path
+  etag   = data.archive_file.bootstrap.output_md5
+}
+
+module "fn_digest" {
+  source  = "terraform-aws-modules/lambda/aws"
+  version = "~> 7.0"
+
+  function_name = "${var.project}-digest-${var.environment}"
+  handler       = "index.handler"
+  runtime       = "nodejs22.x"
+  architectures = ["arm64"] # Graviton
+  timeout       = 120       # background job: iterate opted-in users + SES sends (no API GW 29s ceiling)
+  memory_size   = 256
+  tracing_mode  = "Active"
+
+  create_package          = false
+  ignore_source_code_hash = true
+  s3_existing_package     = { bucket = module.artifacts_bucket.s3_bucket_id, key = "digest/bootstrap.zip" }
+
+  attach_tracing_policy = true # AWSXRayDaemonWriteAccess
+
+  environment_variables = {
+    ENVIRONMENT             = var.environment
+    LOG_LEVEL               = "INFO"
+    POWERTOOLS_SERVICE_NAME = "digest"
+    USERS_TABLE_NAME        = module.users_table.dynamodb_table_id
+    POSTS_TABLE_NAME        = module.posts_table.dynamodb_table_id
+    ARTICLES_TABLE_NAME     = module.articles_table.dynamodb_table_id
+    SES_FROM_ADDRESS        = local.ses_from_address           # notifications sender (ses.tf)
+    FRONTEND_URL            = "https://${local.frontend_host}" # for building post/article links in the email
+  }
+
+  attach_policy_statements = true
+  policy_statements = {
+    # READ-ONLY DynamoDB across this env's tables: Query the users `by-digest` GSI (opted-in users by
+    # cadence) + the posts/articles `by-created` GSIs (recent content), GetItem. Same wildcard scoping as
+    # the BFF but WITHOUT the mutating actions and WITHOUT Scan — the digest never writes or table-scans.
+    data_read = {
+      effect  = "Allow"
+      actions = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:BatchGetItem"]
+      resources = [
+        "arn:aws:dynamodb:${var.aws_region}:${local.account}:table/${var.project}-*-${var.environment}",
+        "arn:aws:dynamodb:${var.aws_region}:${local.account}:table/${var.project}-*-${var.environment}/index/*",
+      ]
+    }
+    # Send the digest email via the SES API — scoped to this env's domain identity (ses.tf), like the BFF.
+    ses_send = {
+      effect    = "Allow"
+      actions   = ["ses:SendEmail"]
+      resources = ["arn:aws:ses:${var.aws_region}:${local.account}:identity/${local.frontend_host}"]
+    }
+  }
+
+  depends_on = [aws_s3_object.digest_bootstrap]
+}
+
+# EventBridge schedules — daily + weekly. Each rule passes a STATIC {periodicity} input so ONE handler
+# serves both cadences: it Queries users whose digest_schedule == periodicity. 11:00 UTC ≈ 08:00
+# America/Sao_Paulo (no DST in Brazil since 2019), a sensible morning send.
+resource "aws_cloudwatch_event_rule" "digest_daily" {
+  name                = "${var.project}-digest-daily-${var.environment}"
+  description         = "Fire the daily newsletter digest"
+  schedule_expression = "cron(0 11 * * ? *)"
+}
+
+resource "aws_cloudwatch_event_rule" "digest_weekly" {
+  name                = "${var.project}-digest-weekly-${var.environment}"
+  description         = "Fire the weekly newsletter digest (Mondays)"
+  schedule_expression = "cron(0 11 ? * MON *)"
+}
+
+resource "aws_cloudwatch_event_target" "digest_daily" {
+  rule  = aws_cloudwatch_event_rule.digest_daily.name
+  arn   = module.fn_digest.lambda_function_arn
+  input = jsonencode({ periodicity = "daily" })
+}
+
+resource "aws_cloudwatch_event_target" "digest_weekly" {
+  rule  = aws_cloudwatch_event_rule.digest_weekly.name
+  arn   = module.fn_digest.lambda_function_arn
+  input = jsonencode({ periodicity = "weekly" })
+}
+
+resource "aws_lambda_permission" "digest_daily" {
+  statement_id  = "AllowDailyDigestInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = module.fn_digest.lambda_function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.digest_daily.arn
+}
+
+resource "aws_lambda_permission" "digest_weekly" {
+  statement_id  = "AllowWeeklyDigestInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = module.fn_digest.lambda_function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.digest_weekly.arn
+}
+
+# SSM config bus — the api deploy reads this to update-function-code the digest bundle (Pattern B).
+resource "aws_ssm_parameter" "digest_function_name" {
+  name  = "/${var.environment}/api/digest-function-name"
+  type  = "String"
+  value = module.fn_digest.lambda_function_name
+}
