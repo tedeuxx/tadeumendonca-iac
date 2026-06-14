@@ -327,6 +327,7 @@ module "fn_digest" {
     ARTICLES_TABLE_NAME     = module.articles_table.dynamodb_table_id
     SES_FROM_ADDRESS        = local.ses_from_address           # notifications sender (ses.tf)
     FRONTEND_URL            = "https://${local.frontend_host}" # for building post/article links in the email
+    COGNITO_USER_POOL_ID    = module.cognito.id                # resolve opted-in users' email from Cognito (auth.tf)
   }
 
   attach_policy_statements = true
@@ -347,6 +348,14 @@ module "fn_digest" {
       effect    = "Allow"
       actions   = ["ses:SendEmail"]
       resources = ["arn:aws:ses:${var.aws_region}:${local.account}:identity/${local.frontend_host}"]
+    }
+    # Resolve each opted-in user's email by their Cognito sub. The users table is keyed by sub and holds
+    # NO email (the SPA's access token doesn't carry it), so Cognito is the authoritative source. ListUsers
+    # (paginated, one map per run) instead of N AdminGetUser calls; scoped to this env's user pool.
+    cognito_read = {
+      effect    = "Allow"
+      actions   = ["cognito-idp:ListUsers"]
+      resources = [module.cognito.arn]
     }
   }
 
