@@ -21,6 +21,17 @@ resource "aws_s3_object" "bff_bootstrap" {
   etag   = data.archive_file.bootstrap.output_md5
 }
 
+# Giphy API key (beta) from Secrets Manager — provisioned out-of-band (owner created the Giphy app;
+# see README "Out-of-band secrets"). Used by the blog editor's GIF search, proxied through the BFF so
+# the key never reaches the browser. Per the platform secrets rule (/backend/secrets-management), only
+# the secret ARN is injected into the Lambda env; the BFF fetches the value at runtime via getSecret()
+# and caches it for the container lifetime. Metadata-only data source — Terraform never reads the value,
+# so the key stays out of TF state. (auth.tf's google_oauth reads the VALUE because Terraform itself
+# wires it into Cognito; a Lambda-consumed secret follows the ARN + runtime-fetch rule instead.)
+data "aws_secretsmanager_secret" "giphy" {
+  name = "${var.project}/${var.environment}/giphy-api-key"
+}
+
 # BFF Lambda — Hono modular monolith. Pattern B (placeholder zip; api repo ships code).
 # NON-VPC by deliberate cost choice: the BFF reaches DynamoDB/S3/SES/Cognito/SSM over their public AWS
 # endpoints (IAM-auth'd, TLS) — no NAT needed. It runs in the VPC ONLY when it has an in-VPC dependency
@@ -59,7 +70,8 @@ module "bff" {
     USERS_TABLE_NAME         = module.users_table.dynamodb_table_id
     OG_IMAGES_BUCKET         = module.og_images_bucket.s3_bucket_id
     ASSETS_BUCKET            = module.assets_bucket.s3_bucket_id
-    SES_FROM_ADDRESS         = local.ses_from_address # notifications sender (ses.tf)
+    SES_FROM_ADDRESS         = local.ses_from_address                   # notifications sender (ses.tf)
+    GIPHY_SECRET_ARN         = data.aws_secretsmanager_secret.giphy.arn # GIF search proxy (Phase 4); BFF fetches value at runtime
     # REDIS_* / SNS_TOPIC_ARN added later in Phase 2 (cache.tf / sns.tf).
   }
 
@@ -107,6 +119,13 @@ module "bff" {
       effect    = "Allow"
       actions   = ["ses:SendEmail"]
       resources = ["arn:aws:ses:${var.aws_region}:${local.account}:identity/${local.frontend_host}"]
+    }
+    # Fetch third-party API keys (Giphy today, future tokens) at runtime — read-only, scoped to this
+    # env's secret namespace (/backend/secrets-management). The value never lands in env/SSM/TF state.
+    read_secrets = {
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = ["arn:aws:secretsmanager:${var.aws_region}:${local.account}:secret:${var.project}/${var.environment}/*"]
     }
   }
 
