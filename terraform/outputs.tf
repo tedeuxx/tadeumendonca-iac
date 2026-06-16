@@ -1,42 +1,7 @@
-# Root outputs (visibility in TFC). Intra-root references use the module/resource directly.
-# NOTE: vpc_id / private_subnets / public_subnets / lambda_security_group_id were removed when the BFF
-# went non-VPC (no NAT — see api.tf). They return when an in-VPC dependency (Redis) is reintroduced.
-
-output "frontend_bucket_name" {
-  description = "Private fed SPA origin bucket (CloudFront OAC reads it)."
-  value       = module.frontend_bucket.s3_bucket_id
-}
-
-output "artifacts_bucket_name" {
-  description = "Lambda code artifacts bucket (Pattern B bootstrap + deploy zips)."
-  value       = module.artifacts_bucket.s3_bucket_id
-}
-
-output "og_images_bucket_name" {
-  description = "Generated OG images cache bucket."
-  value       = module.og_images_bucket.s3_bucket_id
-}
-
-output "dynamodb_table_names" {
-  description = "Per-entity DynamoDB table names (also published to SSM /{env}/data/*-table-name)."
-  value = {
-    profile       = module.profile_table.dynamodb_table_id
-    posts         = module.posts_table.dynamodb_table_id
-    articles      = module.articles_table.dynamodb_table_id
-    subscriptions = module.subscriptions_table.dynamodb_table_id
-    audits        = module.audits_table.dynamodb_table_id
-  }
-}
-
-output "cloudfront_distribution_id" {
-  description = "CloudFront distribution id (also in SSM /{env}/frontend/cloudfront-distribution-id)."
-  value       = module.cloudfront.cloudfront_distribution_id
-}
-
-output "frontend_url" {
-  description = "Public SPA URL (custom domain fronted by CloudFront)."
-  value       = "https://${local.frontend_host}"
-}
+# Root outputs (visibility in TFC). This repo owns the SHARED foundation only; the app-infra outputs
+# (buckets, dynamodb_table_names, cloudfront_distribution_id, frontend_url, github_actions_role_arns)
+# moved with the app .tf to the tadeumendonca-pwa monorepo (iac/ split). The app reads the values below
+# via the SSM config bus (no terraform_remote_state).
 
 output "cognito_user_pool_id" {
   description = "Cognito user pool id (also in SSM /{env}/auth/cognito-user-pool-id)."
@@ -49,14 +14,6 @@ output "cognito_hosted_ui_url" {
 }
 
 output "waf_regional_arn" {
-  description = "REGIONAL WAF web ACL ARN (protects the Cognito hosted UI; HTTP API v2 can't use WAF)."
+  description = "REGIONAL WAF web ACL ARN (protects the Cognito hosted UI + the app's API GW; consumed via SSM /{env}/auth/waf-regional-arn)."
   value       = module.waf_regional.arn
-}
-
-output "github_actions_role_arns" {
-  description = "OIDC deploy role ARNs for the api/fed repos (also in SSM /{env}/iam/*)."
-  value = {
-    api = module.oidc_api.iam_role_arn
-    fed = module.oidc_fed.iam_role_arn
-  }
 }
