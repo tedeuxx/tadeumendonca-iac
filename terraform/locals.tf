@@ -6,15 +6,4 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }
-
-  # Per-env domain model (/infrastructure/route53): production sits on the apex; staging on a
-  # `staging.` subdomain. auth/api hosts derive from the frontend host.
-  frontend_host = var.environment == "production" ? var.apex_domain : "staging.${var.apex_domain}"
-  auth_domain   = "auth.${local.frontend_host}"
-  api_domain    = "api.${local.frontend_host}"
-  callback_urls = ["https://${local.frontend_host}/callback"]
-  logout_urls   = ["https://${local.frontend_host}/"]
-
-  # Notifications sender — per-env, on the verified SES domain identity (ses.tf).
-  ses_from_address = "no-reply@${local.frontend_host}"
 }
