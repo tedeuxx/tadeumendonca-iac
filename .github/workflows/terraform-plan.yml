@@ -31,6 +31,10 @@ env:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    # Per-env OIDC role: the plan job assumes the role from the target env's GitHub Environment, so
+    # AWS_INFRA_OIDC_ROLE_ARN resolves to the staging/production runner. A PR into main therefore waits
+    # on the production Environment's required reviewer before the plan runs (accepted trade-off).
+    environment: ${{ github.base_ref == 'main' && 'production' || 'staging' }}
     defaults:
       run:
         working-directory: terraform
