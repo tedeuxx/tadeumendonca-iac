@@ -8,6 +8,29 @@ shared security baseline** — the **regional WAF** — which any workload can c
 
 > Convention: everything **published on GitHub** (this file, descriptions, commits, PRs) is in **English**.
 
+## Engineering principles (always-on floor)
+This repo consumes the **`tadeumendonca-skills`** plugin's **principles layer** (enabled in
+`.claude/settings.json`; its `PreToolUse` permission-guard hook activates automatically). The
+non-negotiable floor — never bends to risk:
+- **Plan-first** — design and align before changing infra; **ask on the boundaries** (architecture,
+  contracts, anything irreversible), decide autonomously on in-pattern work. Never a solo architectural call.
+- **Thin vertical slices, WIP = 1** — one reviewable increment at a time; surgical changes, debt tracked as issues.
+- **Quality is a gate** — checkov + `fmt`/`validate` + a **reviewed `plan`** + Sonar; **apply only on merge,
+  pipeline-only** (`terraform apply`/`destroy` never run on a laptop). For app repos the floor adds **100% E2E + API regression** — here the equivalent is a clean reviewed plan before any merge.
+- **Observability is part of done** — WAF logging (`aws-waf-logs-*`) and a post-apply check that the ARN
+  published to SSM is what consumers read.
+- **Security & resilience by-design** — least-privilege (per-env runner roles), no hardcoded account IDs,
+  the WAF block-list as the shared baseline.
+- **Rigor calibrated to blast-radius** — light on staging (auto-apply on merge to `develop`), heavy on
+  production (merge to `main`, gated by Environment approval; **promotion always asks**).
+- **Environment = git branch** — `develop` → staging, `main` → production; the pipeline deploys on merge, the
+  agent never deploys. Local is **read-only** (`fmt`/`validate`/inspection `plan`).
+
+Depth lives in the plugin's `/principles/*` skills — `/principles/engineering-philosophy`,
+`/principles/verification-and-gates`, `/principles/dev-loop`, `/principles/permissions-and-environments` (the
+canonical environment + permission model this repo's `.claude/settings.json` encodes). For deliberate
+validation of a non-trivial decision, invoke the **`principles-guide`** subagent.
+
 ## Purpose in the platform (why it exists)
 tadeumendonca.io is the owner's **proof-of-engineering product** (repositioning from "Architect / AWS
 Professional Services" to **Senior Software Engineer** at product companies); the architecture IS part of the
