@@ -6,5 +6,106 @@
   },
   "enabledPlugins": {
     "tadeumendonca-skills@tadeumendonca": true
+  },
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Write",
+
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git restore:*)",
+      "Bash(git stash:*)",
+      "Bash(git merge:*)",
+      "Bash(git push:*)",
+
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+
+      "Bash(terraform fmt:*)",
+      "Bash(terraform validate:*)",
+      "Bash(terraform plan:*)",
+      "Bash(terraform init:*)",
+      "Bash(terraform show:*)",
+      "Bash(terraform output:*)",
+      "Bash(terraform providers:*)",
+      "Bash(terraform version:*)",
+      "Bash(terraform workspace list:*)",
+      "Bash(terraform workspace show:*)",
+      "Bash(checkov:*)",
+
+      "Bash(aws sts get-caller-identity:*)",
+      "Bash(aws ssm get-parameter:*)",
+      "Bash(aws ssm get-parameters:*)",
+      "Bash(aws ssm describe-parameters:*)",
+      "Bash(aws wafv2 list-:*)",
+      "Bash(aws wafv2 get-:*)",
+      "Bash(aws logs describe-:*)",
+      "Bash(aws logs get-:*)",
+      "Bash(aws iam get-:*)",
+      "Bash(aws iam list-:*)",
+      "Bash(aws s3 ls:*)",
+
+      "Bash(python3:*)",
+      "Bash(jq:*)",
+      "Bash(curl localhost:*)",
+      "Bash(curl http://localhost:*)",
+      "Bash(curl 127.0.0.1:*)",
+      "Bash(curl http://127.0.0.1:*)",
+
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)"
+    ],
+    "deny": [
+      "Bash(terraform apply:*)",
+      "Bash(terraform destroy:*)",
+      "Bash(terraform workspace select:*production*)",
+      "Bash(terraform workspace new:*production*)",
+
+      "Bash(git push:*main*)",
+      "Bash(gh pr merge:*main*)",
+      "Bash(gh pr merge:*--base main*)",
+      "Bash(gh pr merge:*-B main*)",
+
+      "Bash(git tag:*)",
+      "Bash(git push:*--tags*)",
+      "Bash(git push:*--follow-tags*)",
+      "Bash(gh release create:*)",
+      "Bash(gh release delete:*)",
+
+      "Bash(aws ssm put-parameter:*)",
+      "Bash(aws ssm delete-parameter:*)",
+      "Bash(aws secretsmanager:*)",
+
+      "Bash(*--force*)",
+      "Bash(*--hard*)",
+      "Bash(git reset --hard:*)",
+      "Bash(rm -rf:*)",
+      "Bash(*production*)",
+      "Bash(*--dangerously-skip-permissions*)"
+    ]
   }
 }
