@@ -1,80 +1,86 @@
 # tadeumendonca-iac
 
-**Infra COMPARTILHADA (Terraform) da plataforma tadeumendonca.io — só a WAF regional.** Pós-migração,
-**todo o app** (Cognito, SES, API GW, S3, CloudFront, lambdas, roles de deploy do app) vive no monorepo
-**`tadeumendonca-pwa`** (em `iac/`). Este repo ficou enxuto: provisiona **apenas a baseline de segurança
-compartilhada** — a **WAF REGIONAL** —, que qualquer workload pode consumir. Irmãos ativos: `-pwa` (o app),
-`-skills` (guias). `-fed`/`-api` **arquivados**.
+**Shared infrastructure (Terraform) for the tadeumendonca.io platform — the regional WAF, and nothing else.**
+After the migration, the **entire app** (Cognito, SES, API GW, S3, CloudFront, lambdas, the app deploy roles)
+lives in the **`tadeumendonca-pwa`** monorepo (under `iac/`). This repo was slimmed to provision **only the
+shared security baseline** — the **regional WAF** — which any workload can consume. Active siblings: `-pwa`
+(the product), `-skills` (the Claude skills plugin). `-fed`/`-api` were deleted.
 
-## Propósito na plataforma (por que existe)
-tadeumendonca.io é o **artefato de prova de engenharia** do dono — um produto real que ele projeta,
-constrói e opera, para se reposicionar de "Architect (AWS Professional Services)" para **Senior Software
-Engineer** em product companies; a **arquitetura é parte do argumento**. O papel **deste** repo nesse
-argumento é pequeno mas deliberado: ele demonstra **separação de infra shared vs workload-specific** (a WAF
-regional é uma baseline reutilizável por qualquer workload, consumida via SSM) e **IaC-first** (zero
-ClickOps). O produto que os visitantes veem está no `-pwa`; aqui é só a fundação compartilhada.
+> Convention: everything **published on GitHub** (this file, descriptions, commits, PRs) is in **English**.
 
-**Implicações operacionais (regra):** decisões defensáveis com trade-off articulável (código é público e
-é o pitch); **sem over-engineering** (o mínimo que resolve), mas é **produto que precisa funcionar**;
-cloud-native, IaC-first, custo controlado, observabilidade básica, CI/CD desde o commit 1.
+## Purpose in the platform (why it exists)
+tadeumendonca.io is the owner's **proof-of-engineering product** (repositioning from "Architect / AWS
+Professional Services" to **Senior Software Engineer** at product companies); the architecture IS part of the
+argument. This repo's role is small but deliberate: it demonstrates **shared-vs-workload-specific infra
+separation** (the regional WAF is a reusable baseline consumed via SSM) and **IaC-first** (zero ClickOps). The
+product visitors see is in `-pwa`; here is only the shared foundation.
 
-## ⚠️ Antes de tudo
-**Merge em `develop` aplica infra AWS REAL em staging** (auto-apply via pipeline); merge em `main` aplica
-em produção (com aprovação do Environment). Confirme o `plan` antes de mergear — o escopo hoje é pequeno
-(a WAF compartilhada), mas o risco/custo são reais.
+## Architectural decisions & trade-offs (rationale)
+The platform runs a real product on a personal budget. Two requirements drive everything: **R1 —
+cost-controlled / scale-to-zero**; **R2 — a defensible security posture** (security is part of the argument).
+This repo's slice:
+- **Shared regional WAF = the cost reason for the shared-vs-workload split.** A WAF web ACL costs ~$5/mo +
+  ~$1/rule/mo + $0.60/M requests. Provisioning **one** regional WAF here and **sharing it across workloads**
+  (API GW stages, Cognito hosted UIs) via the SSM config bus avoids duplicating that cost per workload. That
+  is exactly why "shared vs workload-specific" is the dividing line — reusable baselines live here.
+- **WAF kept despite cost (R2).** WAF (and, in `-pwa`, Cognito threat protection) is a deliberate security
+  investment — part of the defensible posture, not cut for cost.
+- **Least-privilege, per-env CI runner (R2 — compensates for R1's account choice).** Staging and production
+  share **one AWS account** (no account-level isolation — a cost decision). The **per-env iac runner roles**
+  (`github-actions-tadeumendonca-iac-{staging,production}`) restore that isolation cheaply: a leaked staging
+  OIDC token can't assume the production role, and the prod role is released only after the `production`
+  Environment approval. The IAM role boundary IS the isolation here.
+- **Single AWS account** (`Project` tag = workload boundary), **TFC free tier + Local execution**, **AWS
+  Support Basic** — same cost discipline as the rest of the platform.
 
-## O que este repo provisiona (`waf.tf`)
-- **WAF REGIONAL compartilhada**: `module.waf_regional` (cloudposse/waf, scope `REGIONAL`, block-list:
-  `AWSManagedRulesCommonRuleSet` + `KnownBadInputs` + rate-limit), o log group `aws-waf-logs-*`, e o ARN
-  publicado em SSM **`/{env}/auth/waf-regional-arn`**.
-- **As associações NÃO ficam aqui** — cada workload que consome (ex.: o `-pwa`, em `api.tf` + `auth.tf`)
-  lê o ARN via SSM e cria seu próprio `aws_wafv2_web_acl_association` (stage do API GW, hosted UI do Cognito).
-- Nada de Cognito/SES/CloudFront/lambda/IAM-de-app aqui — tudo isso é do `-pwa`.
+## What this repo provisions (`waf.tf`)
+- **Shared REGIONAL WAF:** `module.waf_regional` (cloudposse/waf, scope `REGIONAL`, block-list:
+  `AWSManagedRulesCommonRuleSet` + `KnownBadInputs` + rate-limit), the log group `aws-waf-logs-*`, and the ARN
+  published to SSM **`/{env}/auth/waf-regional-arn`**.
+- **Associations do NOT live here** — each consuming workload (e.g. `-pwa`, in `api.tf` + `auth.tf`) reads the
+  ARN via SSM and creates its own `aws_wafv2_web_acl_association` (API GW stage, Cognito hosted UI).
+- No Cognito/SES/CloudFront/lambda/app-IAM here — all of that is in `-pwa`.
 
-## Decisões fixas (NÃO reverter sem discussão)
-- **`-iac` = só infra COMPARTILHADA** (a WAF regional). O critério é **shared vs workload-specific**: o que é
-  reutilizável por mais de um workload fica aqui; o que é dedicado a um workload (Cognito, SES bound ao
-  domínio, etc.) vive no `-pwa`. Foi essa a régua que colapsou o `-iac` pra WAF-only.
-- **As associações WAF NÃO ficam aqui** — o consumidor lê o ARN via **SSM** (`/{env}/auth/waf-regional-arn`)
-  e cria a própria associação. SSM é o **config bus** (DAG acíclico, sem `terraform_remote_state`).
-- **IaC pipeline-only**; runner do iac **per-env**, bootstrapado out-of-band, confiando em `-iac` + `-pwa`.
-- **Terraform >= 1.9**, provider **AWS `~> 5.0`**, **um único provider** (região default). O alias
-  `us_east_1` saiu com a infra de CloudFront/ACM/Cognito (foi pro `-pwa`).
-- **Terraform Cloud** = backend de state + lock; execução **Local** (o GitHub Actions roda `plan`/`apply`).
-  `TFC_API_TOKEN` autentica.
-- **Módulos oficiais primeiro** (`terraform-aws-modules/*` / cloudposse), chamados direto no root.
+## Branching strategy (GitFlow — same as -pwa)
+- **`develop`** is the default. Feature/fix branches from `develop` → PR → merge → **auto-apply to staging**.
+- **`main`** = **production**: merge applies to prod, gated by the `production` Environment approval.
+- Numeric SemVer auto-bump (`version-develop` patch on develop; `version-main` from the PR `semver:` label on main).
+- Note: **`-skills` uses a different model** (plugin release-cut, not a deploy) — see its CLAUDE.md.
 
-## Layout (`terraform/` — root único, nunca duplicado por env)
-`waf.tf` + `providers`/`variables`/`versions`/`outputs`/`locals`. `env/*.tfvars` (só isto difere por
-ambiente). Variáveis remanescentes: `project`, `environment`, `aws_region`.
+## Stack
+- **Terraform >= 1.9**, AWS provider `~> 5.0`, **single provider** (default region; the `us_east_1` alias left
+  with the CloudFront/ACM/Cognito infra when it moved to `-pwa`).
+- **Terraform Cloud** = state + lock backend; **Local** execution (GitHub Actions runs `plan`/`apply`). `TFC_API_TOKEN` authenticates.
+- Official modules first (`terraform-aws-modules/*` / cloudposse), called directly at the root.
 
-## Estado & ambientes
-- **Uma workspace TFC por ambiente**: `tadeumendonca-iac-{staging|production}` (com tag). O CI seleciona
-  via `TF_WORKSPACE` + `-var-file=env/<env>.tfvars`. O `cloud{}` não interpola variáveis — literais ali.
-- Per-env via condicional `var.environment == "production"`.
+## Layout (`terraform/` — single root, never duplicated per env)
+`waf.tf` + `providers`/`variables`/`versions`/`outputs`/`locals`. `env/*.tfvars` (the only per-env difference).
+Remaining variables: `project`, `environment`, `aws_region`.
 
-## Convenções (NÃO-óbvias)
-- **Toda variável tem `type` + bloco `validation`** (falha no `plan`, nunca no `apply`).
-- **Tags via `default_tags`**: `Project`/`Environment`/`ManagedBy=terraform`. `Project` é a fronteira de
-  workload (conta AWS é compartilhada).
-- **Sem `account_id` hardcoded** (→ `data.aws_caller_identity`).
-- **Roles de deploy OIDC:** os do app (BFF/FED) vivem no `-pwa` agora. O **runner do iac** é **per-env**
-  (`github-actions-tadeumendonca-iac-<env>`), bootstrapado **out-of-band**, e confia tanto no `-iac` quanto
-  no `-pwa` (que também roda `infra-apply`).
+## State & environments
+- **One TFC workspace per env:** `tadeumendonca-iac-{staging|production}` (tagged). CI selects via
+  `TF_WORKSPACE` + `-var-file=env/<env>.tfvars`. The `cloud{}` block doesn't interpolate — literals only.
+- Per-env via the `var.environment == "production"` conditional.
+
+## Conventions
+- Every variable has a `type` + a `validation` block (fail at `plan`, never at `apply`).
+- Tags via `default_tags` (`Project`/`Environment`/`ManagedBy=terraform`); `Project` is the workload boundary
+  (the AWS account is shared).
+- No hardcoded `account_id` (→ `data.aws_caller_identity`).
+- App deploy OIDC roles (BFF/FED) live in `-pwa` now. The **iac runner** is per-env, bootstrapped out-of-band,
+  trusting both `-iac` and `-pwa`.
 
 ## CI/CD (`.github/workflows/`)
-- `terraform-plan.yml` (PR): **checkov** → `fmt -check` → `init` → `validate` → `plan` → comenta no PR.
-  O job assume o role **per-env** via `environment:` (staging em PR→develop, production em PR→main).
-- `terraform-deploy.yml`: merge `develop` → `apply` staging (auto); merge `main` → `apply` produção (aprovação).
-- `sonar.yml`: **SonarCloud IaC** (check `sonar` obrigatório).
+- `terraform-plan.yml` (PR): checkov → fmt → init → validate → plan → comment. The job assumes the **per-env**
+  role via `environment:` (staging for PR→develop, production for PR→main).
+- `terraform-deploy.yml`: merge `develop` → apply staging; merge `main` → apply production (Environment approval).
+- `sonar.yml`: SonarCloud IaC (required `sonar` check).
 
-## Secrets (padrão da plataforma — ver skill `/workflow/github-actions`)
-- `AWS_INFRA_OIDC_ROLE_ARN` = **environment secret** per-env (staging/production), apontando pro runner per-env.
+## Secrets (platform standard — see `/workflow/github-actions`)
+- `AWS_INFRA_OIDC_ROLE_ARN` = **environment secret** per-env (points to the per-env runner role).
 - Tooling tokens = **repository**: `TFC_API_TOKEN`, `SONAR_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `VERSION_BUMP_TOKEN`.
 
-## Comandos (geralmente via CI)
-```bash
-terraform -chdir=terraform fmt -check -recursive
-terraform -chdir=terraform validate
-checkov -d terraform/ --config-file .checkov.yaml
-```
+## ⚠️ Destructive / requires explicit confirmation
+- **Merge to `develop`** auto-applies real AWS infra to **staging**; **merge to `main`** applies **production**
+  (with approval). Confirm the `plan` first.
+- `terraform apply`/`destroy` run in CI only (pipeline-only). Local is read-only (`fmt`/`validate`/inspection `plan`).
