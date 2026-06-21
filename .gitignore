@@ -24,3 +24,6 @@ terraform/bootstrap/*.zip
 # Sensitive — never commit
 *.pem
 *.key
+
+# Claude Code — personal/local overrides (e.g. autoMemoryDirectory). Never committed.
+.claude/settings.local.json
