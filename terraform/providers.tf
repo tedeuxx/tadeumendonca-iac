@@ -1,15 +1,8 @@
-# Default provider (var.aws_region) + us_east_1 alias for CloudFront / WAF CLOUDFRONT / ACM /
-# Cognito custom domain. Tags applied once via default_tags on BOTH providers — never per resource.
+# Single AWS provider (var.aws_region). Tags applied once via default_tags — never per resource.
+# (The us-east-1 alias used by CloudFront / WAF CLOUDFRONT / ACM / the Cognito custom domain left with
+# the app infra when it moved to the tadeumendonca-pwa monorepo; this repo owns only the regional WAF.)
 provider "aws" {
   region = var.aws_region
-  default_tags {
-    tags = local.tags
-  }
-}
-
-provider "aws" {
-  alias  = "us_east_1"
-  region = "us-east-1"
   default_tags {
     tags = local.tags
   }
